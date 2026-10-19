@@ -1,0 +1,19 @@
+# Конфигурация KDC (шаблон; ${REALM} подставляется при старте контейнера)
+
+[kdcdefaults]
+    kdc_ports = 750,88
+    kdc_tcp_ports = 88
+
+[realms]
+    ${REALM} = {
+        database_name = /var/lib/krb5kdc/principal
+        admin_keytab = FILE:/etc/krb5kdc/kadm5.keytab
+        acl_file = /etc/krb5kdc/kadm5.acl
+        key_stash_file = /etc/krb5kdc/stash
+        kdc_ports = 750,88
+        kdc_tcp_ports = 88
+        max_life = 10h 0m 0s
+        max_renewable_life = 7d 0h 0m 0s
+        master_key_type = aes256-cts
+        default_principal_flags = +preauth
+    }

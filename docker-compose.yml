@@ -1,0 +1,145 @@
+name: reberos
+
+networks:
+  lab:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.10.0/24
+
+volumes:
+  keytabs:
+
+services:
+  kdc:
+    build:
+      context: .
+      dockerfile: kdc/Dockerfile
+    hostname: ${KDC_HOST}
+    container_name: ${KDC_HOST}
+    restart: unless-stopped
+    networks:
+      lab:
+        ipv4_address: ${KDC_IP}
+        aliases:
+          - ${KDC_HOST}
+    environment:
+      REALM: ${REALM}
+      DOMAIN: ${DOMAIN}
+      KDC_HOST: ${KDC_HOST}
+      LDAP_HOST: ${LDAP_HOST}
+      WEB_HOST: ${WEB_HOST}
+      KDC_IP: ${KDC_IP}
+      LDAP_IP: ${LDAP_IP}
+      WEB_IP: ${WEB_IP}
+      KDC_MASTER_KEY: ${KDC_MASTER_KEY}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      ALICE_PASSWORD: ${ALICE_PASSWORD}
+    volumes:
+      - keytabs:/keytabs
+    ports:
+      - "127.0.0.1:88:88/tcp"
+      - "127.0.0.1:88:88/udp"
+      - "127.0.0.1:749:749/tcp"
+      - "127.0.0.1:464:464/tcp"
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -x krb5kdc >/dev/null && pgrep -x kadmind >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  ldap:
+    build:
+      context: .
+      dockerfile: ldap/Dockerfile
+    hostname: ${LDAP_HOST}
+    container_name: ${LDAP_HOST}
+    restart: unless-stopped
+    networks:
+      lab:
+        ipv4_address: ${LDAP_IP}
+        aliases:
+          - ${LDAP_HOST}
+    environment:
+      REALM: ${REALM}
+      DOMAIN: ${DOMAIN}
+      KDC_HOST: ${KDC_HOST}
+      LDAP_HOST: ${LDAP_HOST}
+      KDC_IP: ${KDC_IP}
+      LDAP_IP: ${LDAP_IP}
+      WEB_IP: ${WEB_IP}
+      LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD}
+      ALICE_PASSWORD: ${ALICE_PASSWORD}
+      KRB5_KTNAME: FILE:/keytabs/ldap.keytab
+    volumes:
+      - keytabs:/keytabs:ro
+    ports:
+      - "127.0.0.1:389:389"
+    depends_on:
+      kdc:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "ldapsearch -x -H ldap://127.0.0.1 -b '' -s base 1.1 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  client:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    hostname: client.${DOMAIN}
+    container_name: client.${DOMAIN}
+    restart: unless-stopped
+    networks:
+      lab:
+        ipv4_address: 172.30.10.30
+        aliases:
+          - client.${DOMAIN}
+    environment:
+      REALM: ${REALM}
+      DOMAIN: ${DOMAIN}
+      KDC_HOST: ${KDC_HOST}
+      LDAP_HOST: ${LDAP_HOST}
+      WEB_HOST: ${WEB_HOST}
+      ALICE_PASSWORD: ${ALICE_PASSWORD}
+    depends_on:
+      kdc:
+        condition: service_healthy
+      ldap:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: apache/Dockerfile
+    profiles: ["apache"]
+    hostname: ${WEB_HOST}
+    container_name: ${WEB_HOST}
+    restart: unless-stopped
+    networks:
+      lab:
+        ipv4_address: 172.30.10.40
+        aliases:
+          - ${WEB_HOST}
+    environment:
+      REALM: ${REALM}
+      DOMAIN: ${DOMAIN}
+      KDC_HOST: ${KDC_HOST}
+      WEB_HOST: ${WEB_HOST}
+      KRB5_KTNAME: FILE:/keytabs/http.keytab
+    volumes:
+      - keytabs:/keytabs:ro
+    ports:
+      - "127.0.0.1:8080:80"
+    depends_on:
+      kdc:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -x apache2 >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
