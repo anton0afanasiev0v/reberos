@@ -12,6 +12,11 @@
         Require valid-user
     </Location>
 
+    # Публичная страница — без аутентификации (для наглядной проверки)
+    <Location /public>
+        Require all granted
+    </Location>
+
     ErrorLog ${APACHE_LOG_DIR}/error.log
     CustomLog ${APACHE_LOG_DIR}/access.log combined
 </VirtualHost>

@@ -95,7 +95,15 @@ if [ "$WITH_APACHE" = 1 ]; then
         bad "ожидался 401, получен '$CODE'"
     fi
 
-    step "8. Apache: 200 по GSSAPI-билету (SPNEGO)"
+    step "8. Apache: /public без билета (HTTP 200, с хоста)"
+    PUB="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/public/ || true)"
+    if [ "$PUB" = "200" ]; then
+        ok "публичная страница открыта без аутентификации"
+    else
+        bad "ожидался 200 для /public, получен '$PUB'"
+    fi
+
+    step "9. Apache: 200 по GSSAPI-билету (SPNEGO)"
     exec_c "echo '$ALICE_PASSWORD' | kinit alice" >/dev/null 2>&1 || true
     S8="$(exec_c "spnego-check http://${WEB_HOST}/" 2>&1 || true)"
     if echo "$S8" | grep -q "Kerberos"; then
@@ -105,7 +113,7 @@ if [ "$WITH_APACHE" = 1 ]; then
     fi
 else
     echo
-    echo "(профиль apache не включён — тесты 7-8 пропущены; запуск: ./scripts/verify.sh --with-apache)"
+    echo "(профиль apache не включён — тесты 7-9 пропущены; запуск: ./scripts/verify.sh --with-apache)"
 fi
 
 echo

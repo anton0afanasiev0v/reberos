@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head><meta charset="utf-8"><title>reberos lab — публичная страница</title></head>
+<body>
+  <h1>Лаборатория Kerberos: публичная страница</h1>
+  <p>Эта страница (<code>/public</code>) доступна <strong>без аутентификации</strong> —
+     так проверяется, что веб-сервер вообще работает.</p>
+  <p>Основная страница сайта — <a href="/"><code>/</code></a> — защищена
+     аутентификацией Kerberos (SPNEGO/GSSAPI): без билета она отдаёт
+     <strong>HTTP 401</strong>.</p>
+
+  <h2>Как получить доступ к / с хоста</h2>
+  <ol>
+    <li>В <code>/etc/hosts</code> хоста: <code>127.0.0.1 web.lab.test</code>.</li>
+    <li>Настроен <code>/etc/krb5.conf</code> хоста (realm <code>LAB.TEST</code>,
+        <code>kdc = 127.0.0.1</code>).</li>
+    <li><code>kinit alice</code> (пароль — из <code>.env</code> лаборатории).</li>
+    <li>Браузер с поддержкой Negotiate на Linux — Firefox
+        (<code>network.negotiate-auth.trusted-uris = web.lab.test</code>).</li>
+  </ol>
+  <p>Подробности: <code>docs/docker-lab.md</code>, раздел «Доступ к сайту с хоста».</p>
+</body>
+</html>

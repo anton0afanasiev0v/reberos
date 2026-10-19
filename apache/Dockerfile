@@ -17,6 +17,7 @@ RUN printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d \
 
 COPY common/krb5.conf.tpl /templates/krb5.conf.tpl
 COPY apache/kerberos.conf.tpl /templates/kerberos.conf.tpl
+COPY apache/public.html /templates/public.html
 COPY apache/index.html /var/www/html/index.html
 COPY apache/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

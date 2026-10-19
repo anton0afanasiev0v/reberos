@@ -12,7 +12,7 @@ docker compose up -d --build          # kdc + ldap + client
 ./scripts/verify.sh                   # 8 автоматических проверок
 
 # с опциональным веб-сервером (Apache + SPNEGO):
-./scripts/verify.sh --with-apache     # 11 проверок
+./scripts/verify.sh --with-apache   # 12 проверок
 
 # остановить и удалить данные:
 ./scripts/reset.sh
