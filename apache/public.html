@@ -11,7 +11,7 @@
 
   <h2>Как получить доступ к / с хоста</h2>
   <ol>
-    <li>В <code>/etc/hosts</code> хоста: <code>127.0.0.1 web.lab.test</code>.</li>
+    <li>В <code>/etc/hosts</code> хоста: <code>127.0.0.1 web.lab.test keycloak.lab.test</code>.</li>
     <li>Настроен <code>/etc/krb5.conf</code> хоста (realm <code>LAB.TEST</code>,
         <code>kdc = 127.0.0.1</code>).</li>
     <li><code>kinit alice</code> (пароль — из <code>.env</code> лаборатории).</li>

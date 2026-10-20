@@ -1,0 +1,11 @@
+# Привязка Grafana к Prometheus ( provisioning при старте контейнера ).
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus.lab.test:9090
+    isDefault: true
+    editable: false

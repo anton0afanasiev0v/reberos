@@ -12,7 +12,7 @@ RUN printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d \
         procps \
     && rm -rf /var/lib/apt/lists/* \
     && rm -f /usr/sbin/policy-rc.d \
-    && a2enmod auth_gssapi >/dev/null \
+    && a2enmod auth_gssapi proxy proxy_http headers >/dev/null \
     && a2dissite 000-default >/dev/null
 
 COPY common/krb5.conf.tpl /templates/krb5.conf.tpl

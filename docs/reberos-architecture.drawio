@@ -1,0 +1,159 @@
+<mxfile>
+  <diagram id="reberos-arch" name="Reberos Architecture">
+    <mxGraphModel dx="3674" dy="1259" grid="1" gridSize="10" guides="1" tooltips="0" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1200" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="user" parent="1" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" value="Пользователь (Браузер)" vertex="1">
+          <mxGeometry height="60" width="30" x="-380" y="670" as="geometry" />
+        </mxCell>
+        <mxCell id="net-lab" parent="1" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;fillColor=none;strokeColor=#666666;align=left;verticalAlign=top;spacingLeft=10;" value="Docker network: lab (172.30.10.0/24)" vertex="1">
+          <mxGeometry height="1120" width="1360" x="200" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="kdc" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="kdc.lab.test&#xa;MIT Kerberos (krb5kdc + kadmind)&#xa;:88,749,464&#xa;IP: ${KDC_IP}" vertex="1">
+          <mxGeometry height="90" width="200" x="260" y="100" as="geometry" />
+        </mxCell>
+        <mxCell id="ldap" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="ldap.lab.test&#xa;OpenLDAP (slapd)&#xa;:389&#xa;IP: ${LDAP_IP}" vertex="1">
+          <mxGeometry height="90" width="200" x="600" y="105" as="geometry" />
+        </mxCell>
+        <mxCell id="keycloak" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" value="keycloak.lab.test [profile: keycloak]&#xa;Keycloak 26 (OIDC, Kerberos/SPNEGO)&#xa;:8080 (dev)&#xa;IP: ${KEYCLOAK_IP}" vertex="1">
+          <mxGeometry height="90" width="220" x="940" y="100" as="geometry" />
+        </mxCell>
+        <mxCell id="client" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" value="client.lab.test&#xa;krb5 + Python spnego-check.py&#xa;SPNEGO/Kerberos тесты" vertex="1">
+          <mxGeometry height="80" width="200" x="160" y="250" as="geometry" />
+        </mxCell>
+        <mxCell id="web" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="web.lab.test [profile: apache]&#xa;Apache httpd + mod_auth_kerb&#xa;SPNEGO/Negotiate&#xa;:80 -&gt; 8080 на хосте&#xa;IP: 172.30.10.40" vertex="1">
+          <mxGeometry height="100" width="240" x="-170" y="660" as="geometry" />
+        </mxCell>
+        <mxCell id="grafana" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="grafana.lab.test&#xa;Grafana 13.2.4&#xa;auth.proxy (X-WEBAUTH-USER)&#xa;serves under /grafana/&#xa;IP: ${GRAFANA_IP}" vertex="1">
+          <mxGeometry height="90" width="240" x="-395" y="260" as="geometry" />
+        </mxCell>
+        <mxCell id="prometheus" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" value="prometheus.lab.test&#xa;Prometheus v3.15.0&#xa;:9090&#xa;IP: ${PROMETHEUS_IP}" vertex="1">
+          <mxGeometry height="80" width="200" x="900" y="480" as="geometry" />
+        </mxCell>
+        <mxCell id="blackbox" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" value="blackbox.lab.test&#xa;Blackbox Exporter v0.29.0&#xa;:9115&#xa;IP: ${BLACKBOX_IP}" vertex="1">
+          <mxGeometry height="80" width="200" x="1120" y="680" as="geometry" />
+        </mxCell>
+        <mxCell id="cadvisor" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" value="cadvisor.lab.test&#xa;cAdvisor v0.49.1&#xa;:8080" vertex="1">
+          <mxGeometry height="80" width="160" x="1260" y="480" as="geometry" />
+        </mxCell>
+        <mxCell id="vol-keytabs" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#f5f5f5;strokeColor=#666666;" value="volume: keytabs&#xa;(shared KRB5 keytabs)" vertex="1">
+          <mxGeometry height="90" width="200" x="-140" y="70" as="geometry" />
+        </mxCell>
+        <mxCell id="vol-prom" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#f5f5f5;strokeColor=#666666;" value="volume: prometheus-data" vertex="1">
+          <mxGeometry height="80" width="200" x="810" y="620" as="geometry" />
+        </mxCell>
+        <mxCell id="vol-graf" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#f5f5f5;strokeColor=#666666;" value="volume: grafana-data" vertex="1">
+          <mxGeometry height="80" width="240" x="-420" y="110" as="geometry" />
+        </mxCell>
+        <mxCell id="e-user-web" edge="1" parent="1" source="user" style="endArrow=block;html=1;rounded=0;" target="web" value="HTTP + SPNEGO Negotiate">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-web-kdc" edge="1" parent="1" source="web" style="endArrow=block;html=1;rounded=0;dashed=1;" target="kdc" value="Kerberos AS/TGS">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="640" y="280" />
+              <mxPoint x="360" y="280" />
+            </Array>
+            <mxPoint x="640" y="320" as="sourcePoint" />
+            <mxPoint x="360" y="190" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-kdc-ldap" edge="1" parent="1" source="kdc" style="endArrow=block;html=1;rounded=0;" target="ldap" value="LDAP lookups / principals">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-keycloak-ldap" edge="1" parent="1" source="keycloak" style="endArrow=block;html=1;rounded=0;" target="ldap" value="User federation">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-keycloak-kdc" edge="1" parent="1" source="keycloak" style="endArrow=block;html=1;rounded=0;dashed=1;" target="kdc" value="Kerberos/SPNEGO (opt)">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="890" y="80" />
+              <mxPoint x="360" y="80" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-client-kdc" edge="1" parent="1" source="client" style="endArrow=block;html=1;rounded=0;" target="kdc" value="kinit / TGT">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-client-web" edge="1" parent="1" source="client" style="endArrow=block;html=1;rounded=0;dashed=1;" target="web" value="SPNEGO check">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="110" y="540" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-web-graf" edge="1" parent="1" source="web" style="endArrow=block;html=1;rounded=0;" target="grafana" value="Reverse proxy /grafana/">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-graf-prom" edge="1" parent="1" source="grafana" style="endArrow=block;html=1;rounded=0;" target="prometheus" value="Prometheus datasource">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-prom-blackbox" edge="1" parent="1" source="prometheus" style="endArrow=block;html=1;rounded=0;" target="blackbox" value="Scrape /probe">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-blackbox-web" edge="1" parent="1" source="blackbox" style="endArrow=block;html=1;rounded=0;dashed=1;" target="web" value="probe http://web.lab.test/ &amp; /public/">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="980" y="720" />
+              <mxPoint x="640" y="720" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-blackbox-prom" edge="1" parent="1" source="blackbox" style="endArrow=block;html=1;rounded=0;dashed=1;" target="prometheus" value="probe prometheus/-/healthy">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-prom-cadvisor" edge="1" parent="1" source="prometheus" style="endArrow=block;html=1;rounded=0;" target="cadvisor" value="scrape cAdvisor">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-prom-grafana" edge="1" parent="1" source="prometheus" style="endArrow=block;html=1;rounded=0;" target="grafana" value="scrape Grafana /grafana/metrics">
+          <mxGeometry relative="1" x="0.0149" as="geometry">
+            <Array as="points">
+              <mxPoint x="1000" y="440" />
+              <mxPoint x="640" y="440" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-kdc-keytabs" edge="1" parent="1" source="kdc" style="endArrow=none;html=1;rounded=0;dashed=1;startArrow=block;startFill=1;" target="vol-keytabs" value="write/read keytabs">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-ldap-keytabs" edge="1" parent="1" source="ldap" style="endArrow=none;html=1;rounded=0;dashed=1;startArrow=block;startFill=1;" target="vol-keytabs" value="use ldap.keytab">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="620" y="580" />
+              <mxPoint x="360" y="580" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-web-keytabs" edge="1" parent="1" source="web" style="endArrow=none;html=1;rounded=0;dashed=1;startArrow=block;startFill=1;" target="vol-keytabs" value="use http.keytab">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="540" y="560" />
+              <mxPoint x="360" y="560" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-keycloak-keytabs" edge="1" parent="1" source="keycloak" style="endArrow=none;html=1;rounded=0;dashed=1;startArrow=block;startFill=1;" target="vol-keytabs" value="use keytabs">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="890" y="540" />
+              <mxPoint x="360" y="540" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-prom-vol" edge="1" parent="1" source="prometheus" style="endArrow=none;html=1;rounded=0;dashed=1;startArrow=block;startFill=1;" target="vol-prom" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-graf-vol" edge="1" parent="1" source="grafana" style="endArrow=none;html=1;rounded=0;dashed=1;startArrow=block;startFill=1;" target="vol-graf" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="legend" parent="1" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#f9f9f9;strokeColor=#cccccc;" value="Легенда:&#xa;Синий — Kerberos/LDAP&#xa;Фиолетовый — Keycloak (profile)&#xa;Зелёный — Apache + SPNEGO&#xa;Жёлтый — Grafana&#xa;Оранжевый — Prometheus/Blackbox&#xa;Красный — cAdvisor" vertex="1">
+          <mxGeometry height="140" width="240" x="1180" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="notes" parent="1" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#f9f9f9;strokeColor=#cccccc;" value="Профили: apache, keycloak (docker compose --profile)&#xa;Grafana работает за Apache через /grafana/ с auth.proxy&#xa;Blackbox проверяет: TCP KDC:88/LDAP:389, HTTP-пробы, 401 без билета" vertex="1">
+          <mxGeometry height="120" width="250" x="1180" y="260" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

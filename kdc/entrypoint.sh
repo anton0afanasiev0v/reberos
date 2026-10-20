@@ -6,6 +6,9 @@ DOMAIN="${DOMAIN:?DOMAIN is required}"
 KDC_HOST="${KDC_HOST:?KDC_HOST is required}"
 LDAP_HOST="${LDAP_HOST:?LDAP_HOST is required}"
 WEB_HOST="${WEB_HOST:?WEB_HOST is required}"
+# Ключ Keycloak не обязателен (профиль keycloak), но создаём принципал,
+# чтобы ранний старт KDC не зависел от наличия профиля.
+KEYCLOAK_HOST="${KEYCLOAK_HOST:-keycloak.lab.test}"
 KDC_MASTER_KEY="${KDC_MASTER_KEY:?KDC_MASTER_KEY is required}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}"
 ALICE_PASSWORD="${ALICE_PASSWORD:?ALICE_PASSWORD is required}"
@@ -65,6 +68,9 @@ ensure_service_principal "ldap/${LDAP_HOST}" "/keytabs/ldap.keytab"
 # HTTP — заглавными: так SPNEGO/мод_auth_gssapi запрашивает сервисный тикет
 # (регистр значим: http/... и HTTP/... — разные принципалы)
 ensure_service_principal "HTTP/${WEB_HOST}" "/keytabs/http.keytab"
+# SPNEGO для Keycloak: отдельный принципал и отдельный keytab (guard
+# ensure_service_principal по имени файла идемпотентен и для старых лаб)
+ensure_service_principal "HTTP/${KEYCLOAK_HOST}" "/keytabs/keycloak.keytab"
 chmod 644 /keytabs/*.keytab
 
 log "список принципалов:"

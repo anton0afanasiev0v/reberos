@@ -1,0 +1,12 @@
+# Автозагрузка дашбордов из каталога /var/lib/grafana/dashboards.
+apiVersion: 1
+
+providers:
+  - name: reberos
+    orgId: 1
+    folder: ""
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards

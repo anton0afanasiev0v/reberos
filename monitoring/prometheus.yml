@@ -1,0 +1,94 @@
+# Конфигурация Prometheus лаборатории.
+# Имена хостов — из сети Docker-лаборатории (172.30.10.0/24, DNS контейнеров).
+# Задачи blackbox: tcp до KDC/LDAP, HTTP-пробы сервисов; web-пробы имеют
+# смысл только с включённым профилем apache (иначе probe_success=0).
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: cadvisor
+    static_configs:
+      - targets: ["cadvisor.lab.test:8080"]
+
+  - job_name: grafana
+    # Grafana за своим root_url (http://web.lab.test:8080/grafana/):
+    # путь /metrics она отвечает 301 на canonical URL, недоступный из
+    # внутренней сети, поэтому скрейп идёт сразу по каноническому пути.
+    metrics_path: /grafana/metrics
+    static_configs:
+      - targets: ["grafana.lab.test:3000"]
+
+  # Keycloak (профиль keycloak): метрики с management-интерфейса (9000)
+  - job_name: keycloak
+    static_configs:
+      - targets: ["keycloak.lab.test:9000"]
+
+  # --- пробы TCP (KDC и LDAP) ---
+  - job_name: probe-tcp
+    metrics_path: /probe
+    params:
+      module: [tcp_connect]
+    static_configs:
+      - targets:
+          - kdc.lab.test:88
+          - ldap.lab.test:389
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox.lab.test:9115
+
+  # --- HTTP-пробы всегда доступных адресатов ---
+  - job_name: probe-http-2xx
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - http://prometheus.lab.test:9090/-/healthy
+          - http://grafana.lab.test:3000/grafana/api/health
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox.lab.test:9115
+
+  # --- Apache: публичная страница должна отдавать 200 ---
+  - job_name: probe-http-web-2xx
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets: ["http://web.lab.test/public/"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox.lab.test:9115
+
+  # --- Apache: закрытая страница без билета должна отдавать 401 ---
+  - job_name: probe-http-web-401
+    metrics_path: /probe
+    params:
+      module: [http_expect_401]
+    static_configs:
+      - targets: ["http://web.lab.test/"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox.lab.test:9115

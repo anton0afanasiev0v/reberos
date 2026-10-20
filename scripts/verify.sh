@@ -1,16 +1,23 @@
 #!/bin/bash
 # Сквозная проверка лаборатории: kinit, GSSAPI в LDAP, негативные тесты.
-# Запуск: ./scripts/verify.sh [--with-apache]
+# Запуск: ./scripts/verify.sh [--with-apache] [--with-keycloak]
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 WITH_APACHE=0
-[ "${1:-}" = "--with-apache" ] && WITH_APACHE=1
+WITH_KEYCLOAK=0
+COMPOSE_ARGS=()
+for arg in "$@"; do
+    case "$arg" in
+        --with-apache)   WITH_APACHE=1;   COMPOSE_ARGS+=(--profile apache) ;;
+        --with-keycloak) WITH_KEYCLOAK=1; COMPOSE_ARGS+=(--profile keycloak) ;;
+        *) echo "неизвестный аргумент: $arg (допустимы --with-apache, --with-keycloak)"; exit 2 ;;
+    esac
+done
 
 set -a; source ./.env; set +a
 
-COMPOSE=(docker compose)
-[ "$WITH_APACHE" = 1 ] && COMPOSE=(docker compose --profile apache)
+COMPOSE=(docker compose ${COMPOSE_ARGS[@]+"${COMPOSE_ARGS[@]}"})
 
 PASS=0; FAIL=0
 ok()   { echo "  [OK]   $*"; PASS=$((PASS+1)); }
@@ -113,7 +120,120 @@ if [ "$WITH_APACHE" = 1 ]; then
     fi
 else
     echo
-    echo "(профиль apache не включён — тесты 7-9 пропущены; запуск: ./scripts/verify.sh --with-apache)"
+    echo "(профиль apache не включён — тесты 7-9 и 13-14 пропущены; запуск: ./scripts/verify.sh --with-apache)"
+fi
+
+# --- Мониторинг (Prometheus + Grafana) — входит в базовый состав ---
+step "Мониторинг: жду healthcheck prometheus и grafana"
+wait_healthy "${PROMETHEUS_HOST}" && ok "prometheus healthy" || bad "prometheus unhealthy"
+wait_healthy "${GRAFANA_HOST}" && ok "grafana healthy" || bad "grafana unhealthy"
+
+promql() {
+    curl -s "http://127.0.0.1:9090/api/v1/query" --data-urlencode "query=$1" 2>/dev/null
+}
+
+# Ждём, пока PromQL-выражение не вернёт ожидаемое значение (до 60 с).
+wait_promql() {
+    local q="$1" want="$2" out=""
+    for _ in $(seq 1 30); do
+        out="$(promql "$q")"
+        echo "$out" | grep -q "\"value\":\[[^,]*,\"$want\"\]" && return 0
+        sleep 2
+    done
+    echo "      запрос '$q' не вернул '$want': $(echo "$out" | head -c 300)"
+    return 1
+}
+
+if [ "$WITH_APACHE" = 1 ]; then
+    T_UP='min(up)'
+    P_OK='min(probe_success)'
+else
+    # Без apache веб-цели недоступны — исключаем их задачи blackbox.
+    T_UP='min(up{job!~"probe-http-web.*"})'
+    P_OK='min(probe_success{job!~"probe-http-web.*"})'
+fi
+if [ "$WITH_KEYCLOAK" != 1 ]; then
+    # Без профиля keycloak его scrape-цель недоступна — исключаем задачу.
+    if [ "$WITH_APACHE" = 1 ]; then
+        T_UP='min(up{job!="keycloak"})'
+    else
+        T_UP='min(up{job!~"probe-http-web.*|keycloak"})'
+    fi
+fi
+
+step "10. Prometheus: все таргеты up"
+wait_promql "$T_UP" 1 && ok "таргеты Prometheus up" || bad "есть таргеты не up"
+
+step "11. Grafana: API health"
+CODE=""
+for _ in $(seq 1 30); do
+    CODE="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/api/health || true)"
+    [ "$CODE" = "200" ] && break
+    sleep 2
+done
+if [ "$CODE" = "200" ]; then
+    ok "Grafana /api/health = 200"
+else
+    bad "ожидался 200 для /api/health, получен '$CODE'"
+fi
+
+step "12. blackbox: все пробы успешны"
+wait_promql "$P_OK" 1 && ok "probe_success = 1" || bad "есть неуспешные пробы"
+
+if [ "$WITH_APACHE" = 1 ]; then
+    step "13. Grafana через Apache: 401 без билета"
+    CODE="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/grafana/ || true)"
+    if [ "$CODE" = "401" ]; then
+        ok "HTTP 401 для /grafana/ без аутентификации"
+    else
+        bad "ожидался 401 для /grafana/, получен '$CODE'"
+    fi
+
+    step "14. Grafana: 200 по GSSAPI-билету (SSO через REMOTE_USER)"
+    exec_c "echo '$ALICE_PASSWORD' | kinit alice" >/dev/null 2>&1 || true
+    if exec_c "spnego-check http://${WEB_HOST}/grafana/" >/dev/null 2>&1; then
+        ok "SPNEGO-доступ к Grafana прошёл"
+    else
+        bad "SPNEGO-доступ к Grafana не прошёл"
+    fi
+fi
+
+if [ "$WITH_KEYCLOAK" = 1 ]; then
+    step "15. Keycloak: жду healthcheck"
+    wait_healthy "${KEYCLOAK_HOST}" && ok "keycloak healthy" || bad "keycloak unhealthy"
+
+    step "16. Keycloak: realm lab отвечает 200"
+    CODE=""
+    for _ in $(seq 1 30); do
+        CODE="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/realms/lab || true)"
+        [ "$CODE" = "200" ] && break
+        sleep 2
+    done
+    if [ "$CODE" = "200" ]; then
+        ok "realm lab существует (HTTP 200)"
+    else
+        bad "ожидался 200 для /realms/lab, получен '$CODE'"
+    fi
+
+    step "17. KVNO: сервисный тикет HTTP/keycloak"
+    exec_c "echo '$ALICE_PASSWORD' | kinit alice" >/dev/null 2>&1 || true
+    if exec_c "kvno HTTP/${KEYCLOAK_HOST}" >/dev/null 2>&1; then
+        ok "kvno HTTP/${KEYCLOAK_HOST} выдал сервисный тикет"
+    else
+        bad "kvno HTTP/${KEYCLOAK_HOST} не прошёл (принципал/keytab?)"
+    fi
+
+    step "18. Keycloak: SPNEGO-вход alice (Kerberos flow + LDAP-федерация)"
+    exec_c "echo '$ALICE_PASSWORD' | kinit alice" >/dev/null 2>&1 || true
+    # account-console — публичный клиент: обязателен PKCE (code_challenge/method),
+    # redirect_uri должен совпадать с зарегистрированным /realms/lab/account/*
+    KC_AUTH_URL="http://${KEYCLOAK_HOST}:8080/realms/lab/protocol/openid-connect/auth?client_id=account-console&redirect_uri=http%3A%2F%2F${KEYCLOAK_HOST}%3A8080%2Frealms%2Flab%2Faccount%2F&response_type=code&scope=openid&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256"
+    S9="$(exec_c "spnego-check '$KC_AUTH_URL'" 2>&1 || true)"
+    if echo "$S9" | grep -q "HTTP 200\|HTTP 301\|HTTP 302" && ! echo "$S9" | grep -q "error="; then
+        ok "SPNEGO-вход в Keycloak прошёл (alice резолвится из LDAP)"
+    else
+        bad "SPNEGO-вход в Keycloak не прошёл; вывод: $(echo "$S9" | tr '\n' ' ')"
+    fi
 fi
 
 echo

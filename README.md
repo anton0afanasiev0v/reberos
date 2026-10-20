@@ -1,18 +1,29 @@
 # reberos — лаборатория Kerberos + OpenLDAP (GSSAPI)
 
 Лаборатория аутентификации Kerberos (MIT, realm `LAB.TEST`) с интеграцией
-OpenLDAP через SASL/GSSAPI и опциональным веб-сервером Apache
-(`mod_auth_gssapi`, SPNEGO). Всё разворачивается в Docker Compose;
+OpenLDAP через SASL/GSSAPI, опциональным веб-сервером Apache
+(`mod_auth_gssapi`, SPNEGO), мониторингом Prometheus/Grafana — Grafana
+является вторым закрытым сервисом домена и открывается по SPNEGO-билету —
+и опциональным Keycloak (профиль `keycloak`): федерация пользователей
+из OpenLDAP + вход по SPNEGO-билету Kerberos.
+Всё разворачивается в Docker Compose;
 есть руководство для нативного развёртывания на Astra Linux SE 1.7 (ALSE).
 
 ## Быстрый старт
 
 ```bash
-docker compose up -d --build          # kdc + ldap + client
-./scripts/verify.sh                   # 8 автоматических проверок
+docker compose up -d --build          # kdc + ldap + client + мониторинг
+./scripts/verify.sh                   # 13 автоматических проверок
 
 # с опциональным веб-сервером (Apache + SPNEGO):
-./scripts/verify.sh --with-apache   # 12 проверок
+./scripts/verify.sh --with-apache      # 19 проверок
+
+# с опциональным Keycloak (федерация LDAP + SPNEGO):
+docker compose --profile keycloak up -d --build
+./scripts/verify.sh --with-keycloak    # 17 проверок
+
+# всё вместе (Apache + Keycloak):
+./scripts/verify.sh --with-apache --with-keycloak   # 23 проверки
 
 # остановить и удалить данные:
 ./scripts/reset.sh
@@ -20,7 +31,11 @@ docker compose up -d --build          # kdc + ldap + client
 
 Полная автоматическая проверка закрывает: `kinit`, получение TGT,
 GSSAPI-привязку к LDAP с маппингом в `uid=alice,ou=people,dc=lab,dc=test`,
-негативные сценарии (без билета, анонимный доступ), HTTP 401/200 через SPNEGO.
+негативные сценарии (без билета, анонимный доступ), HTTP 401/200 через SPNEGO,
+мониторинг (health Prometheus/Grafana, все scrape-таргеты up, все пробы
+blackbox), доступ к Grafana через Apache (401 без билета, SSO с билетом)
+и Keycloak (health, realm, KVNO сервисного тикета, SPNEGO-вход alice:
+401 Negotiate без билета → 302 с OIDC-кодом с билетом).
 
 ## Состав
 
@@ -30,13 +45,32 @@ GSSAPI-привязку к LDAP с маппингом в `uid=alice,ou=people,dc
 | `ldap.lab.test` | 172.30.10.20 | OpenLDAP slapd, префикс `dc=lab,dc=test` |
 | `client.lab.test` | 172.30.10.30 | клиент: krb5, ldap-utils, python-SPNEGO |
 | `web.lab.test` | 172.30.10.40 | Apache + mod_auth_gssapi (профиль `apache`) |
+| `prometheus.lab.test` | 172.30.10.50 | Prometheus: scrape + blackbox-пробы |
+| `grafana.lab.test` | 172.30.10.60 | Grafana: дашборды (SSO через Apache) |
+| `cadvisor.lab.test` | 172.30.10.70 | cAdvisor: метрики контейнеров |
+| `blackbox.lab.test` | 172.30.10.80 | blackbox-exporter: TCP/HTTP-пробы |
+| `keycloak.lab.test` | 172.30.10.90 | Keycloak: федерация LDAP + SPNEGO (профиль `keycloak`) |
 
 Порты опубликованы только на localhost хоста: `88` (KDC), `749` (kadmin),
-`464` (changepw), `389` (LDAP), `8080` (HTTP).
+`464` (changepw), `389` (LDAP), `8080` (HTTP), `9090` (Prometheus),
+`3000` (Grafana), `8081` (Keycloak).
+
+Мониторинг входит в базовый состав: Prometheus собирает метрики всех
+сервисов и результаты blackbox-проб, Grafana отдаёт дашборд
+«Reberos — мониторинг лаборатории» (автопровижининг). Два способа
+доступа: админка по паролю на `http://127.0.0.1:3000/grafana/`
+(логин `admin`, пароль — `GRAFANA_ADMIN_PASSWORD` из `.env`) и SSO по
+SPNEGO-билету через Apache `http://web.lab.test:8080/grafana/`.
+Для доступа из браузера хоста по именам добавь в `/etc/hosts`:
+`127.0.0.1 web.lab.test keycloak.lab.test`
+(подробности — в [docs/docker-lab.md](docs/docker-lab.md),
+раздел «Доступ к сайту с хоста»).
 
 Учётные данные (только лаборатория!): пользователь `alice` /
 пароль из `.env` (`ALICE_PASSWORD`); администратор Kerberos `admin/admin`;
-LDAP rootdn `cn=admin,dc=lab,dc=test` / `LDAP_ADMIN_PASSWORD`.
+LDAP rootdn `cn=admin,dc=lab,dc=test` / `LDAP_ADMIN_PASSWORD`;
+администратор Keycloak `admin` / `KEYCLOAK_ADMIN_PASSWORD`
+(админка `http://127.0.0.1:8081/`).
 
 ## Документация
 
@@ -56,6 +90,8 @@ LDAP rootdn `cn=admin,dc=lab,dc=test` / `LDAP_ADMIN_PASSWORD`.
 ├── ldap/                    # slapd + authz-regexp + seed-каталог
 ├── client/                  # клиентская утилитарная среда
 ├── apache/                  # Apache + mod_auth_gssapi (профиль apache)
+├── keycloak/                # Keycloak: realm + LDAP-федерация (профиль keycloak)
+├── monitoring/              # Prometheus, blackbox, провижининг Grafana
 └── scripts/
     ├── verify.sh            # сквозная проверка лаборатории
     └── reset.sh             # остановка с удалением данных

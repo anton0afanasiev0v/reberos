@@ -5,6 +5,7 @@ REALM="${REALM:?}"
 DOMAIN="${DOMAIN:?}"
 KDC_HOST="${KDC_HOST:?}"
 WEB_HOST="${WEB_HOST:?}"
+GRAFANA_HOST="${GRAFANA_HOST:?}"
 
 log() { echo "[web] $*"; }
 
@@ -23,6 +24,7 @@ if [ ! -f /keytabs/http.keytab ]; then
 fi
 
 sed -e "s|\${WEB_HOST}|$WEB_HOST|g" \
+    -e "s|\${GRAFANA_HOST}|$GRAFANA_HOST|g" \
     /templates/kerberos.conf.tpl > /etc/apache2/sites-available/kerberos.conf
 a2ensite kerberos.conf >/dev/null
 
