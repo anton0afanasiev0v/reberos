@@ -1,0 +1,17 @@
+# Сборка и временные файлы
+.build/
+*.log
+
+# Кэш VS Code / C/C++ индексатор
+.vscode/browse.vc.db
+.vscode/browse.vc.db-shm
+.vscode/browse.vc.db-wal
+.vscode/browse.vc.db.lock
+.vscode/.browse.c_cpp.*
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Прочее
+.DS_Store
