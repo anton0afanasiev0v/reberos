@@ -1,0 +1,39 @@
+# Пример krb5.conf для ЛОКАЛЬНОГО ПК (Узел Б, ORG3/ORG4).
+# НЕ для контейнеров — у них свой client/krb5.conf.tpl.
+#
+# Установка:
+#   sudo cp docs/host-krb5-node-b.conf.example /etc/krb5.conf
+#
+# Ходит в лабораторный KDC через 127.0.0.1:88 — сначала подними Узел Б
+# с override-файлом:
+#   docker compose -f compose-node-b.yml -f compose-host-kdc-b.yml up -d
+# Подробности — docs/docker-lab.md, раздел «kinit на локальном ПК».
+
+[libdefaults]
+    default_realm = ORG3.TEST
+    default_ccache_name = FILE:/run/user/%{uid}/krb5cc_lab
+    dns_lookup_realm = false
+    dns_lookup_kdc = false
+    rdns = false
+    dns_canonicalize_hostname = false
+    forwardable = true
+    ticket_lifetime = 10h
+    renew_lifetime = 7d
+
+[realms]
+    ORG3.TEST = {
+        kdc = 127.0.0.1
+        admin_server = 127.0.0.1
+    }
+    ORG4.TEST = {
+        kdc = 127.0.0.1
+        admin_server = 127.0.0.1
+    }
+
+[domain_realm]
+    web-b.lab.test = ORG3.TEST
+    .lab.test = ORG3.TEST
+    lab.test = ORG3.TEST
+
+[logging]
+    default = FILE:/var/log/krb5libs.log

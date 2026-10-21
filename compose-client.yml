@@ -1,0 +1,38 @@
+name: reberos-client
+
+# Клиентская вагонка: kinit на все 4 realm, GSSAPI, SPNEGO, OIDC-флоу.
+# Сеть reberos создаётся Узлом А (external).
+
+networks:
+  reberos:
+    external: true
+
+services:
+  client:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    hostname: client.${DOMAIN}
+    container_name: client.${DOMAIN}
+    restart: unless-stopped
+    networks:
+      reberos:
+        ipv4_address: ${CLIENT_IP}
+        aliases:
+          - client.${DOMAIN}
+    environment:
+      DOMAIN: ${DOMAIN}
+      ORG1_REALM: ${ORG1_REALM}
+      ORG2_REALM: ${ORG2_REALM}
+      ORG3_REALM: ${ORG3_REALM}
+      ORG4_REALM: ${ORG4_REALM}
+      KDC_A1_HOST: ${KDC_A1_HOST}
+      KDC_A2_HOST: ${KDC_A2_HOST}
+      KDC_B3_HOST: ${KDC_B3_HOST}
+      KDC_B4_HOST: ${KDC_B4_HOST}
+      LDAP_A_HOST: ${LDAP_A_HOST}
+      LDAP_B_HOST: ${LDAP_B_HOST}
+      WEB_A_HOST: ${WEB_A_HOST}
+      WEB_B_HOST: ${WEB_B_HOST}
+      LDAP_HOST: ${LDAP_A_HOST}
+      ALICE_PASSWORD: ${ALICE_PASSWORD}

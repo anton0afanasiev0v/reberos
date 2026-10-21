@@ -14,10 +14,11 @@ RUN apt-get update \
         python3-requests-kerberos \
     && rm -rf /var/lib/apt/lists/*
 
-COPY common/krb5.conf.tpl /templates/krb5.conf.tpl
+COPY client/krb5.conf.tpl /templates/krb5.conf.tpl
 COPY client/entrypoint.sh /entrypoint.sh
 COPY client/spnego-check.py /usr/local/bin/spnego-check
-RUN chmod +x /entrypoint.sh /usr/local/bin/spnego-check
+COPY client/oidc-check.py /usr/local/bin/oidc-check
+RUN chmod +x /entrypoint.sh /usr/local/bin/spnego-check /usr/local/bin/oidc-check
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["sleep", "infinity"]

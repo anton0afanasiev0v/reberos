@@ -1,7 +1,7 @@
 {
-  "realm": "lab",
+  "realm": "${KC_REALM}",
   "enabled": true,
-  "displayName": "LAB.TEST",
+  "displayName": "${NODE_LABEL}",
   "sslRequired": "none",
   "registrationAllowed": false,
   "loginWithEmailAllowed": false,
@@ -22,94 +22,6 @@
   "internationalizationEnabled": false,
   "eventsEnabled": false,
   "adminEventsEnabled": false,
-  "authenticationFlows": [
-    {
-      "id": "browser",
-      "alias": "browser",
-      "description": "${browserFlow}",
-      "providerId": "basic-flow",
-      "topLevel": true,
-      "builtIn": true,
-      "authenticationExecutions": [
-        {
-          "authenticator": "auth-cookie",
-          "authenticatorFlow": false,
-          "requirement": "ALTERNATIVE",
-          "priority": 10,
-          "authenticatorConfig": "Cookie provider"
-        },
-        {
-          "authenticator": "auth-spnego",
-          "authenticatorFlow": false,
-          "requirement": "ALTERNATIVE",
-          "priority": 20,
-          "authenticatorConfig": "Kerberos"
-        },
-        {
-          "authenticator": "identity-provider-redirector",
-          "authenticatorFlow": false,
-          "requirement": "ALTERNATIVE",
-          "priority": 30,
-          "authenticatorConfig": "Identity Provider Redirector"
-        },
-        {
-          "authenticatorFlow": true,
-          "requirement": "ALTERNATIVE",
-          "priority": 40,
-          "flowAlias": "forms"
-        }
-      ]
-    },
-    {
-      "id": "forms",
-      "alias": "forms",
-      "description": "${formsFlow}",
-      "providerId": "basic-flow",
-      "topLevel": false,
-      "builtIn": true,
-      "authenticationExecutions": [
-        {
-          "authenticator": "auth-username-password-form",
-          "authenticatorFlow": false,
-          "requirement": "REQUIRED",
-          "priority": 10
-        },
-        {
-          "authenticator": "auth-otp-form",
-          "authenticatorFlow": false,
-          "requirement": "DISABLED",
-          "priority": 20
-        }
-      ]
-    }
-  ],
-  "authenticatorConfig": [
-    {
-      "id": "Cookie provider",
-      "alias": "Cookie provider",
-      "config": {
-        "cookie.max.age": "300"
-      }
-    },
-    {
-      "id": "Identity Provider Redirector",
-      "alias": "Identity Provider Redirector",
-      "config": {
-        "defaultProvider": ""
-      }
-    },
-    {
-      "id": "Kerberos",
-      "alias": "Kerberos",
-      "config": {
-        "debug": "false",
-        "keyTab": "FILE:/keytabs/keycloak.keytab",
-        "kerberosRealm": "${REALM}",
-        "serverPrincipal": "HTTP/${KEYCLOAK_HOST}",
-        "allowEmptyAuth": "false"
-      }
-    }
-  ],
   "components": {
     "org.keycloak.storage.UserStorageProvider": [
       {
@@ -135,10 +47,7 @@
           "connectionPooling": ["true"],
           "pagination": ["true"],
           "allowPasswordAuthentication": ["true"],
-          "allowKerberosAuthentication": ["true"],
-          "kerberosRealm": ["${REALM}"],
-          "keyTab": ["FILE:/keytabs/keycloak.keytab"],
-          "serverPrincipal": ["HTTP/${KEYCLOAK_HOST}"],
+          "allowKerberosAuthentication": ["false"],
           "useTruststoreSpi": ["ldapsOnly"],
           "debug": ["false"],
           "cachePolicy": ["DEFAULT"]
@@ -193,5 +102,26 @@
         }
       }
     ]
-  }
+  },
+  "clients": [
+    {
+      "clientId": "portal",
+      "name": "Портал (${NODE_LABEL})",
+      "enabled": true,
+      "publicClient": false,
+      "protocol": "openid-connect",
+      "secret": "${CLIENT_SECRET}",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "${PUBLIC_WEB_BASE}/callback",
+        "http://${WEB_HOST}/callback"
+      ],
+      "webOrigins": ["+"],
+      "attributes": {
+        "post.logout.redirect.uris": "+"
+      }
+    }
+  ]
 }

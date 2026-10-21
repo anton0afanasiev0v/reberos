@@ -1,0 +1,15 @@
+# Override для Узла Б: публикует KDC домашнего realm (ORG3.TEST, kdc-b3)
+# на 127.0.0.1:88, чтобы выполнять kinit с локального ПК.
+#
+# Базовый запуск (verify.sh) не меняется — файл подключается явно:
+#   docker compose -f compose-node-b.yml -f compose-host-kdc-b.yml up -d
+#
+# Порт 88 у Kerberos-клиента фиксирован, поэтому публикуется ровно один
+# KDC за раз: этот файл (Узел Б) ИЛИ compose-host-kdc-a.yml (Узел А).
+# Не поднимай оба одновременно — будет «port is already allocated».
+
+services:
+  kdc-b3:
+    ports:
+      - "127.0.0.1:88:88/tcp"
+      - "127.0.0.1:88:88/udp"

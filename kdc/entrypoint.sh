@@ -4,14 +4,20 @@ set -euo pipefail
 REALM="${REALM:?REALM is required}"
 DOMAIN="${DOMAIN:?DOMAIN is required}"
 KDC_HOST="${KDC_HOST:?KDC_HOST is required}"
-LDAP_HOST="${LDAP_HOST:?LDAP_HOST is required}"
-WEB_HOST="${WEB_HOST:?WEB_HOST is required}"
-# Ключ Keycloak не обязателен (профиль keycloak), но создаём принципал,
-# чтобы ранний старт KDC не зависел от наличия профиля.
-KEYCLOAK_HOST="${KEYCLOAK_HOST:-keycloak.lab.test}"
 KDC_MASTER_KEY="${KDC_MASTER_KEY:?KDC_MASTER_KEY is required}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}"
 ALICE_PASSWORD="${ALICE_PASSWORD:?ALICE_PASSWORD is required}"
+# Префикс keytab-файлов: общий том /keytabs на узел, файлы с именем
+# <prefix>-<role>.keytab (a1-ldap.keytab, b3-http.keytab и т.п.)
+KEYTAB_PREFIX="${KEYTAB_PREFIX:-${REALM,,}}"
+KEYTAB_PREFIX="${KEYTAB_PREFIX//./-}"
+# Сервисные принципалы (ldap/HTTP) создаёт только домашний KDC узла
+CREATE_SERVICES="${CREATE_SERVICES:-0}"
+LDAP_HOST="${LDAP_HOST:-}"
+WEB_HOST="${WEB_HOST:-}"
+# Cross-realm доверие внутри узла: krbtgt/ЧУЖОЙ@СВОЙ с общим ключом
+CROSS_REALM_REALM="${CROSS_REALM_REALM:-}"
+CROSS_REALM_KEY="${CROSS_REALM_KEY:-}"
 
 log() { echo "[kdc] $*"; }
 
@@ -27,10 +33,14 @@ render /templates/krb5.conf.tpl /etc/krb5.conf
 render /templates/kdc.conf.tpl /etc/krb5kdc/kdc.conf
 render /templates/kadm5.acl.tpl /etc/krb5kdc/kadm5.acl
 
+mkdir -p /keytabs
+chmod 755 /keytabs
+
 if [ ! -f /var/lib/krb5kdc/principal ]; then
     log "создаю базу данных принципалов realm ${REALM}"
+    # Чистим только свои keytab-файлы: том /keytabs общий на узел
+    rm -f "/keytabs/${KEYTAB_PREFIX}"-*.keytab
     kdb5_util -r "$REALM" create -s -P "$KDC_MASTER_KEY"
-    rm -f /keytabs/*.keytab
 fi
 
 kq() { kadmin.local -q "$1" 2>&1; }
@@ -62,16 +72,33 @@ ensure_service_principal() {
 ensure_user_principal "admin/admin" "$ADMIN_PASSWORD"
 ensure_user_principal "alice" "$ALICE_PASSWORD"
 
-mkdir -p /keytabs
-chmod 755 /keytabs
-ensure_service_principal "ldap/${LDAP_HOST}" "/keytabs/ldap.keytab"
-# HTTP — заглавными: так SPNEGO/мод_auth_gssapi запрашивает сервисный тикет
-# (регистр значим: http/... и HTTP/... — разные принципалы)
-ensure_service_principal "HTTP/${WEB_HOST}" "/keytabs/http.keytab"
-# SPNEGO для Keycloak: отдельный принципал и отдельный keytab (guard
-# ensure_service_principal по имени файла идемпотентен и для старых лаб)
-ensure_service_principal "HTTP/${KEYCLOAK_HOST}" "/keytabs/keycloak.keytab"
-chmod 644 /keytabs/*.keytab
+if [ "$CREATE_SERVICES" = "1" ]; then
+    [ -n "$LDAP_HOST" ] || { log "ОШИБКА: CREATE_SERVICES=1 требует LDAP_HOST"; exit 1; }
+    [ -n "$WEB_HOST" ]  || { log "ОШИБКА: CREATE_SERVICES=1 требует WEB_HOST"; exit 1; }
+    # HTTP — заглавными: так mod_auth_gssapi запрашивает сервисный тикет
+    # (регистр значим: http/... и HTTP/... — разные принципалы)
+    ensure_service_principal "ldap/${LDAP_HOST}" "/keytabs/${KEYTAB_PREFIX}-ldap.keytab"
+    ensure_service_principal "HTTP/${WEB_HOST}"  "/keytabs/${KEYTAB_PREFIX}-http.keytab"
+fi
+
+if [ -n "$CROSS_REALM_REALM" ]; then
+    [ -n "$CROSS_REALM_KEY" ] || { log "ОШИБКА: CROSS_REALM_REALM задан без CROSS_REALM_KEY"; exit 1; }
+    # Взаимное cross-realm доверие внутри узла (прямые пути ORG1<->ORG2).
+    # Один и тот же принципал krbtgt/ЧУЖОЙ@СВОЙ обязан существовать на ОБОИХ
+    # KDC с одинаковым паролем/kvno/etype (MIT: "In both databases, there must
+    # be krbtgt service principals... same passwords, key version numbers").
+    # Направления: клиент A -> сервис B требует krbtgt/B@A в обеих базах,
+    # поэтому создаём оба направления на каждом KDC.
+    ensure_user_principal "krbtgt/${CROSS_REALM_REALM}@${REALM}" "$CROSS_REALM_KEY"
+    ensure_user_principal "krbtgt/${REALM}@${CROSS_REALM_REALM}" "$CROSS_REALM_KEY"
+    # MIT рекомендует не требовать preauth на cross-realm ключах:
+    # иначе preauth нельзя отключить по-сервисно.
+    kq "modprinc -requires_preauth krbtgt/${CROSS_REALM_REALM}@${REALM}" >/dev/null || true
+    kq "modprinc -requires_preauth krbtgt/${REALM}@${CROSS_REALM_REALM}" >/dev/null || true
+    log "cross-realm доверие: ${REALM} <-> ${CROSS_REALM_REALM} (общий ключ)"
+fi
+
+chmod 644 "/keytabs/${KEYTAB_PREFIX}"-*.keytab 2>/dev/null || true
 
 log "список принципалов:"
 kq "listprincs" || true

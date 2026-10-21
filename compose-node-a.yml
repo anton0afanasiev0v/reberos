@@ -1,0 +1,226 @@
+name: reberos-a
+
+# Узел А создаёт общую сеть лаборатории; Узел Б и клиент
+# подключаются к ней как external (запуск: сначала node-a).
+
+networks:
+  reberos:
+    name: reberos
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.11.0/24
+
+volumes:
+  keytabs-a:
+
+services:
+  kdc-a1:
+    build:
+      context: .
+      dockerfile: kdc/Dockerfile
+    hostname: ${KDC_A1_HOST}
+    container_name: ${KDC_A1_HOST}
+    restart: unless-stopped
+    networks:
+      reberos:
+        ipv4_address: ${KDC_A1_IP}
+        aliases:
+          - ${KDC_A1_HOST}
+    environment:
+      REALM: ${ORG1_REALM}
+      DOMAIN: ${DOMAIN}
+      KDC_HOST: ${KDC_A1_HOST}
+      LDAP_HOST: ${LDAP_A_HOST}
+      WEB_HOST: ${WEB_A_HOST}
+      KEYTAB_PREFIX: a1
+      CREATE_SERVICES: "1"
+      CROSS_REALM_REALM: ${ORG2_REALM}
+      CROSS_REALM_KEY: ${CROSS_REALM_KEY}
+      KDC_MASTER_KEY: ${KDC_MASTER_KEY}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      ALICE_PASSWORD: ${ALICE_PASSWORD}
+    volumes:
+      - keytabs-a:/keytabs
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -x krb5kdc >/dev/null && pgrep -x kadmind >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  kdc-a2:
+    build:
+      context: .
+      dockerfile: kdc/Dockerfile
+    hostname: ${KDC_A2_HOST}
+    container_name: ${KDC_A2_HOST}
+    restart: unless-stopped
+    networks:
+      reberos:
+        ipv4_address: ${KDC_A2_IP}
+        aliases:
+          - ${KDC_A2_HOST}
+    environment:
+      REALM: ${ORG2_REALM}
+      DOMAIN: ${DOMAIN}
+      KDC_HOST: ${KDC_A2_HOST}
+      KEYTAB_PREFIX: a2
+      CROSS_REALM_REALM: ${ORG1_REALM}
+      CROSS_REALM_KEY: ${CROSS_REALM_KEY}
+      KDC_MASTER_KEY: ${KDC_MASTER_KEY}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      ALICE_PASSWORD: ${ALICE_PASSWORD}
+    volumes:
+      - keytabs-a:/keytabs
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -x krb5kdc >/dev/null && pgrep -x kadmind >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  ldap-a:
+    build:
+      context: .
+      dockerfile: ldap/Dockerfile
+    hostname: ${LDAP_A_HOST}
+    container_name: ${LDAP_A_HOST}
+    restart: unless-stopped
+    networks:
+      reberos:
+        ipv4_address: ${LDAP_A_IP}
+        aliases:
+          - ${LDAP_A_HOST}
+    environment:
+      REALM: ${ORG1_REALM}
+      DOMAIN: ${DOMAIN}
+      KDC_HOST: ${KDC_A1_HOST}
+      LDAP_HOST: ${LDAP_A_HOST}
+      KEYTAB_FILE: /keytabs/a1-ldap.keytab
+      LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD}
+      ALICE_PASSWORD: ${ALICE_PASSWORD}
+      KRB5_KTNAME: FILE:/keytabs/a1-ldap.keytab
+    volumes:
+      - keytabs-a:/keytabs:ro
+    depends_on:
+      kdc-a1:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "ldapsearch -x -H ldap://127.0.0.1 -b '' -s base 1.1 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  keycloak-a:
+    build:
+      context: .
+      dockerfile: keycloak/Dockerfile
+    hostname: ${KEYCLOAK_A_HOST}
+    container_name: ${KEYCLOAK_A_HOST}
+    restart: unless-stopped
+    networks:
+      reberos:
+        ipv4_address: ${KEYCLOAK_A_IP}
+        aliases:
+          - ${KEYCLOAK_A_HOST}
+    environment:
+      KC_REALM: ${KC_A_REALM}
+      NODE_LABEL: "Узел А"
+      DOMAIN: ${DOMAIN}
+      WEB_HOST: ${WEB_A_HOST}
+      PUBLIC_WEB_BASE: http://${WEB_A_HOST}:${WEB_A_PORT}
+      CLIENT_SECRET: ${PORTAL_CLIENT_SECRET}
+      LDAP_HOST: ${LDAP_A_HOST}
+      LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD}
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KC_HEALTH_ENABLED: "true"
+      KC_METRICS_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
+      # Keycloak 26 по умолчанию на "/" — лаборатория тянет его под /auth,
+      # как на схеме (Apache проксирует /auth без SPNEGO)
+      KC_HTTP_RELATIVE_PATH: /auth
+    command: start-dev --import-realm
+    volumes:
+      - ./keycloak/realm-node.json.tpl:/templates/realm-node.json.tpl:ro
+    ports:
+      - "127.0.0.1:8091:8080"
+    depends_on:
+      ldap-a:
+        condition: service_healthy
+    healthcheck:
+      # В образе нет curl/wget: health-эндпоинты на management-порту 9000;
+      # путь с префиксом /auth (KC_HTTP_RELATIVE_PATH)
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /auth/health/ready HTTP/1.1\\r\\nHost: 127.0.0.1\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '200' <&3"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 60s
+
+  portal-a:
+    build:
+      context: .
+      dockerfile: portal/Dockerfile
+    hostname: ${PORTAL_A_HOST}
+    container_name: ${PORTAL_A_HOST}
+    restart: unless-stopped
+    networks:
+      reberos:
+        ipv4_address: ${PORTAL_A_IP}
+        aliases:
+          - ${PORTAL_A_HOST}
+    environment:
+      NODE_LABEL: "Узел А"
+      ORGS: ${ORG1_REALM},${ORG2_REALM}
+      KC_REALM: ${KC_A_REALM}
+      CLIENT_ID: portal
+      CLIENT_SECRET: ${PORTAL_CLIENT_SECRET}
+      KC_INTERNAL: http://${KEYCLOAK_A_HOST}:8080/auth
+    depends_on:
+      keycloak-a:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  web-a:
+    build:
+      context: .
+      dockerfile: apache/Dockerfile
+    hostname: ${WEB_A_HOST}
+    container_name: ${WEB_A_HOST}
+    restart: unless-stopped
+    networks:
+      reberos:
+        ipv4_address: ${WEB_A_IP}
+        aliases:
+          - ${WEB_A_HOST}
+    environment:
+      REALM: ${ORG1_REALM}
+      DOMAIN: ${DOMAIN}
+      KDC_HOST: ${KDC_A1_HOST}
+      WEB_HOST: ${WEB_A_HOST}
+      KEYTAB_FILE: /keytabs/a1-http.keytab
+      PORTAL_HOST: ${PORTAL_A_HOST}
+      KEYCLOAK_HOST: ${KEYCLOAK_A_HOST}
+      KRB5_KTNAME: FILE:/keytabs/a1-http.keytab
+    volumes:
+      - keytabs-a:/keytabs:ro
+    ports:
+      - "127.0.0.1:${WEB_A_PORT}:80"
+    depends_on:
+      kdc-a1:
+        condition: service_healthy
+      portal-a:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -x apache2 >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s

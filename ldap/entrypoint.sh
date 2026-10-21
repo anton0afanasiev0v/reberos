@@ -7,6 +7,8 @@ KDC_HOST="${KDC_HOST:?}"
 LDAP_HOST="${LDAP_HOST:?}"
 LDAP_ADMIN_PASSWORD="${LDAP_ADMIN_PASSWORD:?}"
 ALICE_PASSWORD="${ALICE_PASSWORD:?}"
+# Файл keytab домашнего KDC узла: /keytabs/<prefix>-ldap.keytab
+KEYTAB_FILE="${KEYTAB_FILE:-/keytabs/ldap.keytab}"
 
 log() { echo "[ldap] $*"; }
 
@@ -30,16 +32,16 @@ render /templates/slapd.conf.tpl /etc/ldap/slapd.conf
 render /templates/seed.ldif.tpl /tmp/seed.ldif
 log "конфигурации отрендерены (suffix: $DC_BASE)"
 
-# --- ждём keytab от KDC ---
+# --- ждём keytab от домашнего KDC узла ---
 for _ in $(seq 1 60); do
-    [ -f /keytabs/ldap.keytab ] && break
+    [ -f "$KEYTAB_FILE" ] && break
     sleep 1
 done
-if [ ! -f /keytabs/ldap.keytab ]; then
-    log "ОШИБКА: /keytabs/ldap.keytab не появился за 60 c"
+if [ ! -f "$KEYTAB_FILE" ]; then
+    log "ОШИБКА: $KEYTAB_FILE не появился за 60 c"
     exit 1
 fi
-log "keytab: $(ls -l /keytabs/ldap.keytab | awk '{print $1, $3, $4, $5}')"
+log "keytab: $(ls -l "$KEYTAB_FILE" | awk '{print $1, $3, $4, $5}')"
 
 # --- каталоги данных ---
 mkdir -p /run/slapd /var/lib/ldap

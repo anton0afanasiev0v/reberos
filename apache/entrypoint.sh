@@ -5,7 +5,9 @@ REALM="${REALM:?}"
 DOMAIN="${DOMAIN:?}"
 KDC_HOST="${KDC_HOST:?}"
 WEB_HOST="${WEB_HOST:?}"
-GRAFANA_HOST="${GRAFANA_HOST:?}"
+KEYTAB_FILE="${KEYTAB_FILE:-/keytabs/http.keytab}"
+PORTAL_HOST="${PORTAL_HOST:?}"
+KEYCLOAK_HOST="${KEYCLOAK_HOST:?}"
 
 log() { echo "[web] $*"; }
 
@@ -14,23 +16,23 @@ sed -e "s|\${REALM}|$REALM|g" \
     -e "s|\${KDC_HOST}|$KDC_HOST|g" \
     /templates/krb5.conf.tpl > /etc/krb5.conf
 
+# Ждём keytab домашнего KDC узла
 for _ in $(seq 1 60); do
-    [ -f /keytabs/http.keytab ] && break
+    [ -f "$KEYTAB_FILE" ] && break
     sleep 1
 done
-if [ ! -f /keytabs/http.keytab ]; then
-    log "ОШИБКА: /keytabs/http.keytab не появился за 60 c"
+if [ ! -f "$KEYTAB_FILE" ]; then
+    log "ОШИБКА: $KEYTAB_FILE не появился за 60 c"
     exit 1
 fi
 
-sed -e "s|\${WEB_HOST}|$WEB_HOST|g" \
-    -e "s|\${GRAFANA_HOST}|$GRAFANA_HOST|g" \
+sed -e "s|\${REALM}|$REALM|g" \
+    -e "s|\${WEB_HOST}|$WEB_HOST|g" \
+    -e "s|\${KEYTAB_FILE}|$KEYTAB_FILE|g" \
+    -e "s|\${PORTAL_HOST}|$PORTAL_HOST|g" \
+    -e "s|\${KEYCLOAK_HOST}|$KEYCLOAK_HOST|g" \
     /templates/kerberos.conf.tpl > /etc/apache2/sites-available/kerberos.conf
 a2ensite kerberos.conf >/dev/null
 
-# Публичная страница (без аутентификации) для наглядной проверки
-mkdir -p /var/www/html/public
-cp /templates/public.html /var/www/html/public/index.html
-
-log "запускаю Apache (principal: HTTP/${WEB_HOST}@${REALM})"
+log "запускаю Apache (SPNEGO principal: HTTP/${WEB_HOST}@${REALM}, portal: ${PORTAL_HOST}, auth: ${KEYCLOAK_HOST})"
 exec apache2ctl -D FOREGROUND
