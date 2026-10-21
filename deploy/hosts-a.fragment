@@ -1,0 +1,12 @@
+# Фрагмент /etc/hosts для хоста УЗЛА А (схема «два хоста»).
+#
+#   sudo tee -a /etc/hosts < deploy/hosts-a.fragment
+#
+# Собственные сервисы Узла А идут на сам хост (network_mode: host) —
+# 127.0.1.1 достаточно: контейнеры слушают 0.0.0.0.
+# Имена Узла Б указывают на IP соседней машины (заменить на реальный).
+
+127.0.1.1 kdc-a1.lab.test kdc-a2.lab.test ldap-a.lab.test web-a.lab.test keycloak-a.lab.test portal-a.lab.test
+
+# --- Узел Б (через канал между хостами) ---
+10.0.0.2 kdc-b3.lab.test kdc-b4.lab.test ldap-b.lab.test web-b.lab.test keycloak-b.lab.test portal-b.lab.test

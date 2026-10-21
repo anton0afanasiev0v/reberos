@@ -1,0 +1,15 @@
+# Override для клиентской вагонки в схеме «два хоста».
+#
+#   docker compose -f compose-client.yml -f compose-client.host.yml up -d
+#
+# Клиент идёт в host-network, чтобы видеть оба узла по именам
+# (/etc/hosts хоста: имена Узла А -> локально, имена Узла Б -> IP узла Б).
+# В демо-режиме (один хост, общий мост kerberos) этот файл не нужен.
+
+services:
+  client:
+    image: ${IMAGE_PREFIX:-lab}/client:${IMAGE_TAG:-1}
+    network_mode: host
+    networks: !reset null
+    ports: !reset null
+    pull_policy: never

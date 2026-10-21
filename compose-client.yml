@@ -12,6 +12,7 @@ services:
     build:
       context: .
       dockerfile: client/Dockerfile
+    image: ${IMAGE_PREFIX:-lab}/client:${IMAGE_TAG:-1}
     hostname: client.${DOMAIN}
     container_name: client.${DOMAIN}
     restart: unless-stopped

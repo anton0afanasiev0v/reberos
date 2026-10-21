@@ -1,0 +1,56 @@
+# Override для Узла Б на ОТДЕЛЬНОМ физическом хосте (схема «два хоста»).
+#
+#   docker compose -f compose-node-b.yml -f compose-node-b.host.yml up -d
+#
+# Образы на этот узел НЕ собираются, а переносятся с Узла А
+# (scripts/sync-node-b.sh) — по каналу 2 МБ/с это ~400 МБ один раз,
+# дальше rsync пропускает неизменившиеся файлы.
+#
+#   docker compose --env-file .env --env-file deploy/env-b.env \
+#       -f compose-node-b.yml -f compose-node-b.host.yml up -d
+#
+# Имена сервисов резолвятся через /etc/hosts хоста
+# (фрагмент deploy/hosts-b.fragment).
+
+services:
+  kdc-b3:
+    image: ${IMAGE_PREFIX:-lab}/kdc:${IMAGE_TAG:-1}
+    network_mode: host
+    networks: !reset null
+    ports: !reset null
+    pull_policy: never
+
+  kdc-b4:
+    image: ${IMAGE_PREFIX:-lab}/kdc:${IMAGE_TAG:-1}
+    network_mode: host
+    networks: !reset null
+    ports: !reset null
+    pull_policy: never
+
+  ldap-b:
+    image: ${IMAGE_PREFIX:-lab}/ldap:${IMAGE_TAG:-1}
+    network_mode: host
+    networks: !reset null
+    ports: !reset null
+    pull_policy: never
+
+  keycloak-b:
+    image: ${IMAGE_PREFIX:-lab}/keycloak:${IMAGE_TAG:-1}
+    network_mode: host
+    networks: !reset null
+    ports: !reset null
+    pull_policy: never
+
+  portal-b:
+    image: ${IMAGE_PREFIX:-lab}/portal:${IMAGE_TAG:-1}
+    network_mode: host
+    networks: !reset null
+    ports: !reset null
+    pull_policy: never
+
+  web-b:
+    image: ${IMAGE_PREFIX:-lab}/apache:${IMAGE_TAG:-1}
+    network_mode: host
+    networks: !reset null
+    ports: !reset null
+    pull_policy: never

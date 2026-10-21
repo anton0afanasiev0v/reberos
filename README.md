@@ -19,7 +19,7 @@
 ## Быстрый старт
 
 ```bash
-./scripts/verify.sh      # поднимает 3 compose-проекта и гоняет 19 проверок
+./scripts/verify.sh      # поднимает 3 compose-проекта и гоняет 28 проверок
 ./scripts/reset.sh       # остановить все проекты и удалить данные
 ```
 
@@ -30,6 +30,27 @@ docker compose -f compose-node-a.yml   up -d --build   # Узел А (созда
 docker compose -f compose-node-b.yml   up -d --build   # Узел Б
 docker compose -f compose-client.yml   up -d --build   # клиент
 ```
+
+## Два физических хоста (канал между узлами 2 МБ/с)
+
+Если Узел А и Узел Б — разные машины, общий docker-мост не работает:
+схема с host-network, имена через `/etc/hosts`, образы собираются
+**один раз** на Узле А и переносятся на Узел Б (≈450 МБ один раз,
+повторный деплой — ≈0).
+
+```bash
+./scripts/build-images.sh                                  # на Узле А
+./scripts/sync-node-b.sh --peer user@<IP-хоста-Б>           # перенос образов
+./scripts/install-hosts.sh a <IP-хоста-Б> | sudo tee -a /etc/hosts
+docker compose --env-file .env --env-file deploy/env-a.env \
+    -f compose-node-a.yml -f compose-node-a.host.yml up -d   # Узел А
+# на Узле Б:
+docker compose --env-file .env --env-file deploy/env-b.env \
+    -f compose-node-b.yml -f compose-node-b.host.yml up -d
+```
+
+Подробности, бюджет трафика и режимы переноса — в
+[docs/two-hosts.md](docs/two-hosts.md).
 
 Полная проверка закрывает: `kinit` во все 4 realm, GSSAPI в LDAP обоих
 узлов (домашний + cross-realm), отказ межузлового доступа, HTTP 401/200
@@ -108,6 +129,9 @@ authorization code → portal /callback → id_token в сессии → /me
 - [docs/docker-lab.md](docs/docker-lab.md) — устройство лаборатории,
   ручные проверки, доступ из браузера хоста, **`kinit` на локальном ПК**
   (пошагово) и **таблица доступов по realm**, «подводные камни».
+- [docs/two-hosts.md](docs/two-hosts.md) — развёртывание на двух
+  физических хостах через канал 2 МБ/с: схема сети, перенос образов,
+  бюджет трафика.
 - [docs/kerberos-two-nodes.drawio](docs/kerberos-two-nodes.drawio) —
   диаграмма целевой архитектуры (два узла, два уровня авторизации).
 - [docs/astra-1.7-kerberos.md](docs/astra-1.7-kerberos.md) — нативное
@@ -122,6 +146,10 @@ authorization code → portal /callback → id_token в сессии → /me
 ├── compose-client.yml       # клиентская вагонка
 ├── compose-host-kdc-a.yml   # override: публикует KDC Узла А на 127.0.0.1:88
 ├── compose-host-kdc-b.yml   # override: публикует KDC Узла Б на 127.0.0.1:88
+├── compose-node-a.host.yml  # override: Узел А на отдельном хосте (host-network)
+├── compose-node-b.host.yml  # override: Узел Б на отдельном хосте (host-network)
+├── compose-client.host.yml  # override: клиент в host-network
+├── deploy/                  # схема «два хоста»: env и /etc/hosts по узлам
 ├── common/krb5.conf.tpl     # шаблон krb5.conf (один realm; серверы)
 ├── client/krb5.conf.tpl     # клиентский krb5.conf: 4 realm + capaths
 ├── kdc/                     # образ и entrypoint KDC (+ cross-realm)
@@ -130,11 +158,16 @@ authorization code → portal /callback → id_token в сессии → /me
 ├── keycloak/                # Keycloak: OIDC-only realm + LDAP-федерация
 ├── portal/                  # портал выбора организации (Python, stdlib)
 ├── docs/
-    ├── host-krb5-node-a.conf.example   # krb5.conf для kinit с локального ПК (А)
-    ├── host-krb5-node-b.conf.example   # krb5.conf для kinit с локального ПК (Б)
-    └── docker-lab.md
+│   ├── host-krb5-node-a.conf.example   # krb5.conf для kinit с локального ПК (А)
+│   ├── host-krb5-node-b.conf.example   # krb5.conf для kinit с локального ПК (Б)
+│   ├── two-hosts.md        # развёртывание на двух хостах через канал 2 МБ/с
+│   └── docker-lab.md
 └── scripts/
-    ├── verify.sh            # сквозная проверка (19 тестов)
+    ├── verify.sh            # сквозная проверка (27 тестов)
+    ├── verify-remote.sh     # то же, но Узел Б на удалённой машине
+    ├── build-images.sh      # единая сборка образов lab/<svc>:1
+    ├── sync-node-b.sh       # перенос образов на Узел Б (bundle|registry|build)
+    ├── install-hosts.sh     # фрагмент /etc/hosts для хоста
     └── reset.sh             # остановка с удалением данных
 ```
 

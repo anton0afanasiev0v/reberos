@@ -19,6 +19,9 @@ services:
     build:
       context: .
       dockerfile: kdc/Dockerfile
+    # Общий тег на все KDC/Apache/... узла: образ собирается один раз и
+    # переносится на второй узел как есть (scripts/sync-node-b.sh).
+    image: ${IMAGE_PREFIX:-lab}/kdc:${IMAGE_TAG:-1}
     hostname: ${KDC_A1_HOST}
     container_name: ${KDC_A1_HOST}
     restart: unless-stopped
@@ -56,6 +59,7 @@ services:
     build:
       context: .
       dockerfile: kdc/Dockerfile
+    image: ${IMAGE_PREFIX:-lab}/kdc:${IMAGE_TAG:-1}
     hostname: ${KDC_A2_HOST}
     container_name: ${KDC_A2_HOST}
     restart: unless-stopped
@@ -89,6 +93,7 @@ services:
     build:
       context: .
       dockerfile: ldap/Dockerfile
+    image: ${IMAGE_PREFIX:-lab}/ldap:${IMAGE_TAG:-1}
     hostname: ${LDAP_A_HOST}
     container_name: ${LDAP_A_HOST}
     restart: unless-stopped
@@ -129,6 +134,7 @@ services:
     build:
       context: .
       dockerfile: keycloak/Dockerfile
+    image: ${IMAGE_PREFIX:-lab}/keycloak:${IMAGE_TAG:-1}
     hostname: ${KEYCLOAK_A_HOST}
     container_name: ${KEYCLOAK_A_HOST}
     restart: unless-stopped
@@ -175,6 +181,7 @@ services:
     build:
       context: .
       dockerfile: portal/Dockerfile
+    image: ${IMAGE_PREFIX:-lab}/portal:${IMAGE_TAG:-1}
     hostname: ${PORTAL_A_HOST}
     container_name: ${PORTAL_A_HOST}
     restart: unless-stopped
@@ -206,6 +213,7 @@ services:
     build:
       context: .
       dockerfile: apache/Dockerfile
+    image: ${IMAGE_PREFIX:-lab}/apache:${IMAGE_TAG:-1}
     hostname: ${WEB_A_HOST}
     container_name: ${WEB_A_HOST}
     restart: unless-stopped

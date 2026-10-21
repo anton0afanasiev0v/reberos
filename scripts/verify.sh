@@ -8,9 +8,27 @@ cd "$(dirname "$0")/.."
 
 set -a; source ./.env; set +a
 
+# Режимы развёртывания:
+#   LAB_REMOTE_B=1  Узел Б поднят на ДРУГОМ хосте (канал между узлами):
+#                   локально его не поднимаем, проверяем доступность
+#                   по сети. Требует LAB_HOST_NET=1 (включается сам).
+#   LAB_HOST_NET=1  контейнеры в network_mode: host (схема «два хоста»),
+#                   имена сервисов резолвятся через /etc/hosts хоста.
+REMOTE_B="${LAB_REMOTE_B:-0}"
+HOST_NET="${LAB_HOST_NET:-0}"
+[ "$REMOTE_B" = "1" ] && HOST_NET=1
+
 CA=(docker compose -f compose-node-a.yml)
 CB=(docker compose -f compose-node-b.yml)
 CC=(docker compose -f compose-client.yml)
+if [ "$HOST_NET" = "1" ]; then
+    CA=(docker compose --env-file .env --env-file deploy/env-a.env
+        -f compose-node-a.yml -f compose-node-a.host.yml)
+    CB=(docker compose --env-file .env --env-file deploy/env-b.env
+        -f compose-node-b.yml -f compose-node-b.host.yml)
+    CC=(docker compose --env-file .env --env-file deploy/env-a.env
+        -f compose-client.yml -f compose-client.host.yml)
+fi
 
 PASS=0; FAIL=0
 ok()   { echo "  [OK]   $*"; PASS=$((PASS+1)); }
@@ -27,8 +45,12 @@ pw() { case "$1" in org1*|org2*) pw_a "$1";; *) pw_b "$1";; esac; }
 step "Поднимаю Узел А (build + up) — создаёт сеть kerberos"
 "${CA[@]}" up -d --build
 
-step "Поднимаю Узел Б (build + up)"
-"${CB[@]}" up -d --build
+if [ "$REMOTE_B" = "1" ]; then
+    step "Узел Б удалённый (канал между хостами) — локально не поднимаю"
+else
+    step "Поднимаю Узел Б (build + up)"
+    "${CB[@]}" up -d --build
+fi
 
 step "Поднимаю клиента (build + up)"
 "${CC[@]}" up -d --build
@@ -45,13 +67,31 @@ wait_healthy() {
     return 1
 }
 
-step "Жду healthcheck всех сервисов"
+# TCP-проба сервиса удалённого узла из контейнера клиента.
+probe_tcp() {
+    exec_c "timeout 3 bash -c 'exec 3<>/dev/tcp/$1/$2'" >/dev/null 2>&1
+}
+
+step "Жду healthcheck сервисов Узла А"
 for c in "$KDC_A1_HOST" "$KDC_A2_HOST" "$LDAP_A_HOST" "$KEYCLOAK_A_HOST" \
-         "$PORTAL_A_HOST" "$WEB_A_HOST" \
-         "$KDC_B3_HOST" "$KDC_B4_HOST" "$LDAP_B_HOST" "$KEYCLOAK_B_HOST" \
-         "$PORTAL_B_HOST" "$WEB_B_HOST"; do
+         "$PORTAL_A_HOST" "$WEB_A_HOST"; do
     if wait_healthy "$c"; then ok "$c healthy"; else bad "$c unhealthy"; fi
 done
+
+if [ "$REMOTE_B" = "1" ]; then
+    step "Проверяю доступность удалённого Узла Б по сети"
+    for pair in "$KDC_B3_HOST:88" "$KDC_B4_HOST:88" "$LDAP_B_HOST:389" \
+                "$KEYCLOAK_B_HOST:8080" "$PORTAL_B_HOST:8000" "$WEB_B_HOST:80"; do
+        h="${pair%:*}"; p="${pair##*:}"
+        if probe_tcp "$h" "$p"; then ok "$h:$p доступен"; else bad "$h:$p недоступен"; fi
+    done
+else
+    step "Жду healthcheck сервисов Узла Б"
+    for c in "$KDC_B3_HOST" "$KDC_B4_HOST" "$LDAP_B_HOST" "$KEYCLOAK_B_HOST" \
+             "$PORTAL_B_HOST" "$WEB_B_HOST"; do
+        if wait_healthy "$c"; then ok "$c healthy"; else bad "$c unhealthy"; fi
+    done
+fi
 [ "$FAIL" = "0" ] || { bad "не все сервисы поднялись"; exit 1; }
 
 step "1. kinit alice во все 4 realm (один пароль)"
@@ -321,6 +361,30 @@ if [ "$C_OWN" = "302" ] && [ "$C_OTHER" = "403" ]; then
     ok "домашняя ORG1=$C_OWN, чужая ORG2=$C_OTHER (org-gate)"
 else
     bad "org-gate: ожидалось ORG1=302/ORG2=403, получено ORG1=$C_OWN/ORG2=$C_OTHER"
+fi
+
+step "28. негатив: знание SPN не даёт билет (чужой realm / другой узел)"
+# Контроль: свой realm — билет есть (иначе негативы «проходят» из-за поломки).
+exec_c "echo '$(pw org1user1)' | kinit org1user1@$ORG1_REALM" >/dev/null 2>&1 || true
+P0="$(exec_c "kvno ldap/$LDAP_A_HOST@$ORG1_REALM" 2>&1 || true)"
+if echo "$P0" | grep -qE "kvno = [0-9]+"; then
+    ok "контроль: билет на свой realm есть (ldap/$LDAP_A_HOST@$ORG1_REALM)"
+else
+    bad "контроль не пройден: $(echo "$P0" | tr '\n' ' ' | head -c 200)"
+fi
+# (а) тот же узел, чужой realm: в базе ORG2 нет сервисных принципалов -> KDC отказывает.
+P1="$(exec_c "kvno ldap/$LDAP_A_HOST@$ORG2_REALM" 2>&1 || true)"
+if echo "$P1" | grep -q "not found in Kerberos database"; then
+    ok "билет на SPN чужого realm ($ORG2_REALM) не выдан"
+else
+    bad "ожидался отказ KDC на SPN чужого realm; получено: $(echo "$P1" | tr '\n' ' ' | head -c 200)"
+fi
+# (б) другой узел: trust'а между ORG1 и ORG3 нет -> нет krbtgt/ORG3.TEST@ORG1.TEST.
+P2="$(exec_c "kvno ldap/$LDAP_B_HOST@$ORG3_REALM" 2>&1 || true)"
+if echo "$P2" | grep -q "krbtgt/$ORG3_REALM@$ORG1_REALM not found"; then
+    ok "билет на сервис другого узла ($ORG3_REALM) не выдан (trust'а нет)"
+else
+    bad "ожидался отказ по отсутствию trust'а; получено: $(echo "$P2" | tr '\n' ' ' | head -c 200)"
 fi
 
 echo

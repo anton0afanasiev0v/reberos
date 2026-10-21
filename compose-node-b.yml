@@ -14,6 +14,7 @@ services:
     build:
       context: .
       dockerfile: kdc/Dockerfile
+    image: ${IMAGE_PREFIX:-lab}/kdc:${IMAGE_TAG:-1}
     hostname: ${KDC_B3_HOST}
     container_name: ${KDC_B3_HOST}
     restart: unless-stopped
@@ -51,6 +52,7 @@ services:
     build:
       context: .
       dockerfile: kdc/Dockerfile
+    image: ${IMAGE_PREFIX:-lab}/kdc:${IMAGE_TAG:-1}
     hostname: ${KDC_B4_HOST}
     container_name: ${KDC_B4_HOST}
     restart: unless-stopped
@@ -84,6 +86,7 @@ services:
     build:
       context: .
       dockerfile: ldap/Dockerfile
+    image: ${IMAGE_PREFIX:-lab}/ldap:${IMAGE_TAG:-1}
     hostname: ${LDAP_B_HOST}
     container_name: ${LDAP_B_HOST}
     restart: unless-stopped
@@ -124,6 +127,7 @@ services:
     build:
       context: .
       dockerfile: keycloak/Dockerfile
+    image: ${IMAGE_PREFIX:-lab}/keycloak:${IMAGE_TAG:-1}
     hostname: ${KEYCLOAK_B_HOST}
     container_name: ${KEYCLOAK_B_HOST}
     restart: unless-stopped
@@ -170,6 +174,7 @@ services:
     build:
       context: .
       dockerfile: portal/Dockerfile
+    image: ${IMAGE_PREFIX:-lab}/portal:${IMAGE_TAG:-1}
     hostname: ${PORTAL_B_HOST}
     container_name: ${PORTAL_B_HOST}
     restart: unless-stopped
@@ -201,6 +206,7 @@ services:
     build:
       context: .
       dockerfile: apache/Dockerfile
+    image: ${IMAGE_PREFIX:-lab}/apache:${IMAGE_TAG:-1}
     hostname: ${WEB_B_HOST}
     container_name: ${WEB_B_HOST}
     restart: unless-stopped

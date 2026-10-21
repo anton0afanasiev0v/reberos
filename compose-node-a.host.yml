@@ -1,0 +1,81 @@
+# Override для Узла А на ОТДЕЛЬНОМ физическом хосте (схема «два хоста»).
+#
+#   docker compose -f compose-node-a.yml -f compose-node-a.host.yml up -d
+#
+# Зачем: в схеме «две машины» общий docker-мост `kerberos` невозможен —
+# bridge живёт в пределах одного демона. Поэтому контейнеры Узла А
+# работают в network_mode: host и адресуются по именам лабораторных
+# сервисов, которые хост резолвит через /etc/hosts
+# (фрагмент deploy/hosts-a.fragment, ставится sudo).
+#
+# Docker копирует /etc/hosts хоста внутрь контейнера при host-network —
+# поэтому отдельные extra_hosts не нужны.
+#
+# Порт Apache в host-mode = 80 (в демо-режиме это 127.0.0.1:8081),
+# поэтому набор env задаётся файлом deploy/env-a.env:
+#   docker compose --env-file .env --env-file deploy/env-a.env \
+#       -f compose-node-a.yml -f compose-node-a.host.yml up -d
+#
+# Порты, которые занимает хост: 88/tcp+udp (KDC), 389 (LDAP), 80 (Apache),
+# 8000 (портал), 8080 (Keycloak), 9000 (Keycloak management).
+
+services:
+  kdc-a1:
+    image: ${IMAGE_PREFIX:-lab}/kdc:${IMAGE_TAG:-1}
+    network_mode: host
+    networks: !reset null
+    ports: !reset null
+    pull_policy: never
+
+  kdc-a2:
+    image: ${IMAGE_PREFIX:-lab}/kdc:${IMAGE_TAG:-1}
+    network_mode: host
+    networks: !reset null
+    ports: !reset null
+    pull_policy: never
+
+  ldap-a:
+    image: ${IMAGE_PREFIX:-lab}/ldap:${IMAGE_TAG:-1}
+    network_mode: host
+    networks: !reset null
+    ports: !reset null
+    pull_policy: never
+
+  keycloak-a:
+    image: ${IMAGE_PREFIX:-lab}/keycloak:${IMAGE_TAG:-1}
+    network_mode: host
+    networks: !reset null
+    ports: !reset null
+    pull_policy: never
+
+  portal-a:
+    image: ${IMAGE_PREFIX:-lab}/portal:${IMAGE_TAG:-1}
+    network_mode: host
+    networks: !reset null
+    ports: !reset null
+    pull_policy: never
+
+  web-a:
+    image: ${IMAGE_PREFIX:-lab}/apache:${IMAGE_TAG:-1}
+    network_mode: host
+    networks: !reset null
+    ports: !reset null
+    pull_policy: never
+
+  # Локальный registry (профиль «registry») — альтернатива переносу
+  # образов файлами: docker compose --profile registry up -d registry.
+  # Слушает 0.0.0.0:5000, образы пушатся сюда и тянутся узлом Б.
+  registry:
+    image: registry:2
+    container_name: lab-registry
+    network_mode: host
+    environment:
+      REGISTRY_HTTP_ADDR: "0.0.0.0:5000"
+      REGISTRY_STORAGE_DELETE_ENABLED: "true"
+    volumes:
+      - registry-data:/registry
+    profiles:
+      - registry
+
+volumes:
+  registry-data:
