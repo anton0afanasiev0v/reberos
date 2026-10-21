@@ -1,9 +1,9 @@
-name: reberos-b
+name: kerberos-b
 
-# Узел Б: сеть reberos уже создана Узлом А (external).
+# Узел Б: сеть kerberos уже создана Узлом А (external).
 
 networks:
-  reberos:
+  kerberos:
     external: true
 
 volumes:
@@ -18,7 +18,7 @@ services:
     container_name: ${KDC_B3_HOST}
     restart: unless-stopped
     networks:
-      reberos:
+      kerberos:
         ipv4_address: ${KDC_B3_IP}
         aliases:
           - ${KDC_B3_HOST}
@@ -55,7 +55,7 @@ services:
     container_name: ${KDC_B4_HOST}
     restart: unless-stopped
     networks:
-      reberos:
+      kerberos:
         ipv4_address: ${KDC_B4_IP}
         aliases:
           - ${KDC_B4_HOST}
@@ -88,7 +88,7 @@ services:
     container_name: ${LDAP_B_HOST}
     restart: unless-stopped
     networks:
-      reberos:
+      kerberos:
         ipv4_address: ${LDAP_B_IP}
         aliases:
           - ${LDAP_B_HOST}
@@ -128,7 +128,7 @@ services:
     container_name: ${KEYCLOAK_B_HOST}
     restart: unless-stopped
     networks:
-      reberos:
+      kerberos:
         ipv4_address: ${KEYCLOAK_B_IP}
         aliases:
           - ${KEYCLOAK_B_HOST}
@@ -174,7 +174,7 @@ services:
     container_name: ${PORTAL_B_HOST}
     restart: unless-stopped
     networks:
-      reberos:
+      kerberos:
         ipv4_address: ${PORTAL_B_IP}
         aliases:
           - ${PORTAL_B_HOST}
@@ -205,7 +205,7 @@ services:
     container_name: ${WEB_B_HOST}
     restart: unless-stopped
     networks:
-      reberos:
+      kerberos:
         ipv4_address: ${WEB_B_IP}
         aliases:
           - ${WEB_B_HOST}

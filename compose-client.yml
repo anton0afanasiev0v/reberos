@@ -1,10 +1,10 @@
-name: reberos-client
+name: kerberos-client
 
 # Клиентская вагонка: kinit на все 4 realm, GSSAPI, SPNEGO, OIDC-флоу.
-# Сеть reberos создаётся Узлом А (external).
+# Сеть kerberos создаётся Узлом А (external).
 
 networks:
-  reberos:
+  kerberos:
     external: true
 
 services:
@@ -16,7 +16,7 @@ services:
     container_name: client.${DOMAIN}
     restart: unless-stopped
     networks:
-      reberos:
+      kerberos:
         ipv4_address: ${CLIENT_IP}
         aliases:
           - client.${DOMAIN}

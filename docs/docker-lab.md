@@ -1,9 +1,9 @@
 # Docker-лаборатория: два узла, два уровня авторизации
 
-Лаборатория собрана по диаграмме [reberos-two-nodes.drawio](reberos-two-nodes.drawio)
+Лаборатория собрана по диаграмме [kerberos-two-nodes.drawio](kerberos-two-nodes.drawio)
 и состоит из **трёх compose-проектов**:
 
-- `compose-node-a.yml` — **Узел А** (ORG1, ORG2), создаёт сеть `reberos`;
+- `compose-node-a.yml` — **Узел А** (ORG1, ORG2), создаёт сеть `kerberos`;
 - `compose-node-b.yml` — **Узел Б** (ORG3, ORG4), сеть `external`;
 - `compose-client.yml` — **клиент** (kinit/ldap/SPNEGO/OIDC), сеть `external`.
 
@@ -257,7 +257,7 @@ Firefox **.deb** (не snap — см. п. 9), в `about:config` →
 2. **Принципал Apache — заглавными `HTTP/host`.** `http/...` и `HTTP/...` —
    разные записи; SPNEGO-клиенты и `mod_auth_gssapi` используют `HTTP/...`.
 3. **DNS Docker ломает канонизацию имён.** PTR вида
-   `ldap-a.lab.test.reberos` строит принципал `ldap/ldap-a.lab.test.reberos`
+   `ldap-a.lab.test.kerberos` строит принципал `ldap/ldap-a.lab.test.kerberos`
    и GSSAPI падает. Лечение: `SASL_NOCANON on` в клиентском
    `/etc/ldap/ldap.conf` + `dns_canonicalize_hostname=false` в krb5.conf.
    Пиннинг `/etc/hosts` **не применять** — Docker перезаписывает файл.
@@ -280,7 +280,7 @@ Firefox **.deb** (не snap — см. п. 9), в `about:config` →
     `http://web-x.lab.test:8081/callback` (браузер), и
     `http://web-x.lab.test/callback` (из Docker-сети) — портал строит
     redirect из заголовка `Host`, поэтому нужны оба.
-12. **Порядок запуска.** Сеть `reberos` создаёт Узел А; Узел Б и клиент
+12. **Порядок запуска.** Сеть `kerberos` создаёт Узел А; Узел Б и клиент
     объявляют её `external` и упадут, если А ещё не поднят.
 13. **authz-regexp: realmless vs cross-realm.** Домашний realm узла приходит
     без `@realm`, cross-realm — с realm в нижнем регистре. Порядок правил

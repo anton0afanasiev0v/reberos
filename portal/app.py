@@ -36,7 +36,7 @@ SESSIONS = {}
 # state -> sid
 STATES = {}
 
-COOKIE = "reberos_sid"
+COOKIE = "kerberos_sid"
 
 # Общий стиль портала (тёмная тема, карточки, адаптив). Только CSS, без CDN.
 STYLE = """
@@ -306,7 +306,7 @@ class Handler(BaseHTTPRequestHandler):
         who = spnego_raw or "личность не определена"
         body = f"""
 <header class="top">
-  <div class="logo">R</div>
+  <div class="logo">K</div>
   <div>
     <h1>{html.escape(NODE_LABEL or "Портал")}</h1>
     <div class="sub">Единый вход в организации узла</div>
@@ -341,7 +341,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _error_page(self, code, title, detail):
         body = f"""
-<header class="top"><div class="logo">R</div>
+<header class="top"><div class="logo">K</div>
   <div><h1>{html.escape(title)}</h1>
   <div class="sub">{html.escape(NODE_LABEL or "Портал")}</div></div></header>
 <section class="card"><p class="meta"><span class="dot warn"></span>
@@ -427,7 +427,7 @@ class Handler(BaseHTTPRequestHandler):
                            "application/json")
             else:
                 body = """
-<header class="top"><div class="logo">R</div>
+<header class="top"><div class="logo">K</div>
   <div><h1>Нет сессии</h1>
   <div class="sub">Сначала выберите организацию на портале</div></div></header>
 <section class="card"><p class="meta"><span class="dot warn"></span>
@@ -459,7 +459,7 @@ class Handler(BaseHTTPRequestHandler):
         sub = html.escape(str(claims.get("sub", "")))
         tok = html.escape(sess.get("id_token") or "")
         body = f"""
-<header class="top"><div class="logo">R</div>
+<header class="top"><div class="logo">K</div>
   <div><h1>OIDC-данные</h1>
   <div class="sub">{html.escape(NODE_LABEL or "Портал")}</div></div></header>
 <div class="grid">

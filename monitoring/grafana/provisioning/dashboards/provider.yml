@@ -2,7 +2,7 @@
 apiVersion: 1
 
 providers:
-  - name: reberos
+  - name: kerberos
     orgId: 1
     folder: ""
     type: file

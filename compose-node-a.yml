@@ -1,11 +1,11 @@
-name: reberos-a
+name: kerberos-a
 
 # Узел А создаёт общую сеть лаборатории; Узел Б и клиент
 # подключаются к ней как external (запуск: сначала node-a).
 
 networks:
-  reberos:
-    name: reberos
+  kerberos:
+    name: kerberos
     driver: bridge
     ipam:
       config:
@@ -23,7 +23,7 @@ services:
     container_name: ${KDC_A1_HOST}
     restart: unless-stopped
     networks:
-      reberos:
+      kerberos:
         ipv4_address: ${KDC_A1_IP}
         aliases:
           - ${KDC_A1_HOST}
@@ -60,7 +60,7 @@ services:
     container_name: ${KDC_A2_HOST}
     restart: unless-stopped
     networks:
-      reberos:
+      kerberos:
         ipv4_address: ${KDC_A2_IP}
         aliases:
           - ${KDC_A2_HOST}
@@ -93,7 +93,7 @@ services:
     container_name: ${LDAP_A_HOST}
     restart: unless-stopped
     networks:
-      reberos:
+      kerberos:
         ipv4_address: ${LDAP_A_IP}
         aliases:
           - ${LDAP_A_HOST}
@@ -133,7 +133,7 @@ services:
     container_name: ${KEYCLOAK_A_HOST}
     restart: unless-stopped
     networks:
-      reberos:
+      kerberos:
         ipv4_address: ${KEYCLOAK_A_IP}
         aliases:
           - ${KEYCLOAK_A_HOST}
@@ -179,7 +179,7 @@ services:
     container_name: ${PORTAL_A_HOST}
     restart: unless-stopped
     networks:
-      reberos:
+      kerberos:
         ipv4_address: ${PORTAL_A_IP}
         aliases:
           - ${PORTAL_A_HOST}
@@ -210,7 +210,7 @@ services:
     container_name: ${WEB_A_HOST}
     restart: unless-stopped
     networks:
-      reberos:
+      kerberos:
         ipv4_address: ${WEB_A_IP}
         aliases:
           - ${WEB_A_HOST}

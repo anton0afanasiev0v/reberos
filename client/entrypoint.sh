@@ -32,7 +32,7 @@ sed -e "s|\${DOMAIN}|$DOMAIN|g" \
     /templates/krb5.conf.tpl > /etc/krb5.conf
 
 # SASL_NOCANON: не канонизировать имя сервера обратным DNS. Без этого
-# OpenLDAP-клиент резолвит IP в PTR Docker DNS (ldap-a.lab.test.reberos)
+# OpenLDAP-клиент резолвит IP в PTR Docker DNS (ldap-a.lab.test.kerberos)
 # и GSSAPI-привязка падает: Server krbtgt/... not found.
 # Пиннинг в /etc/hosts не применяем: Docker перезаписывает этот файл
 # при любых изменениях сети.

@@ -1,6 +1,6 @@
-# reberos — лаборатория двухузловой аутентификации (Kerberos + OpenLDAP + OIDC)
+# Kerberos — лаборатория двухузловой аутентификации (Kerberos + OpenLDAP + OIDC)
 
-Лаборатория в спеке двух узлов (см. [docs/reberos-two-nodes.drawio](docs/reberos-two-nodes.drawio)):
+Лаборатория в спеке двух узлов (см. [docs/kerberos-two-nodes.drawio](docs/kerberos-two-nodes.drawio)):
 каждый узел — домашний KDC + OpenLDAP + Apache (SPNEGO) + Keycloak (OIDC)
 + портал; на узел по две организации (realm). Пользователь проходит **два
 уровня авторизации**:
@@ -23,7 +23,7 @@
 ./scripts/reset.sh       # остановить все проекты и удалить данные
 ```
 
-Поднять вручную (порядок важен: Узел А создаёт сеть `reberos`):
+Поднять вручную (порядок важен: Узел А создаёт сеть `kerberos`):
 
 ```bash
 docker compose -f compose-node-a.yml   up -d --build   # Узел А (создаёт сеть)
@@ -55,7 +55,7 @@ realm Keycloak через Apache `/auth` без SPNEGO, полный OIDC-фло
 | Узел Б | `portal-b.lab.test` | 172.30.11.52 | Портал (Python, сессии) |
 | клиент | `client.lab.test` | 172.30.11.30 | kinit/ldap/SPNEGO/OIDC-проверки |
 
-Сеть `reberos` (172.30.11.0/24) создаётся проектом Узла А; Узел Б и клиент
+Сеть `kerberos` (172.30.11.0/24) создаётся проектом Узла А; Узел Б и клиент
 подключаются как `external`. Порты на localhost хоста: `8081` — web-a,
 `8082` — web-b, `8091`/`8092` — админка Keycloak A/Б.
 
@@ -108,7 +108,7 @@ authorization code → portal /callback → id_token в сессии → /me
 - [docs/docker-lab.md](docs/docker-lab.md) — устройство лаборатории,
   ручные проверки, доступ из браузера хоста, **`kinit` на локальном ПК**
   (пошагово) и **таблица доступов по realm**, «подводные камни».
-- [docs/reberos-two-nodes.drawio](docs/reberos-two-nodes.drawio) —
+- [docs/kerberos-two-nodes.drawio](docs/kerberos-two-nodes.drawio) —
   диаграмма целевой архитектуры (два узла, два уровня авторизации).
 - [docs/astra-1.7-kerberos.md](docs/astra-1.7-kerberos.md) — нативное
   развёртывание Kerberos + OpenLDAP GSSAPI + Apache на Astra Linux SE 1.7.

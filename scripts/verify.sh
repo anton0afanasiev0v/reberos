@@ -24,7 +24,7 @@ pw_a() { for pair in $ORG_USER_PASSWORDS_A; do case "$pair" in "$1"=*) echo "${p
 pw_b() { for pair in $ORG_USER_PASSWORDS_B; do case "$pair" in "$1"=*) echo "${pair#*=}"; return;; esac; done; }
 pw() { case "$1" in org1*|org2*) pw_a "$1";; *) pw_b "$1";; esac; }
 
-step "Поднимаю Узел А (build + up) — создаёт сеть reberos"
+step "Поднимаю Узел А (build + up) — создаёт сеть kerberos"
 "${CA[@]}" up -d --build
 
 step "Поднимаю Узел Б (build + up)"
