@@ -39,7 +39,7 @@
           "uuidLDAPAttribute": ["entryUUID"],
           "usersDn": ["ou=people,${DC_BASE}"],
           "userObjectClass": ["inetOrgPerson"],
-          "searchScope": ["1"],
+          "searchScope": ["2"],
           "importEnabled": ["false"],
           "syncPeriod": ["-1"],
           "batchSizeForSync": ["1000"],

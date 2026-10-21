@@ -19,6 +19,11 @@ step() { echo; echo "==> $*"; }
 
 exec_c() { "${CC[@]}" exec -T client bash -c "$1"; }
 
+# Пароль конкретного логина из "логин=пароль ..." (узел A: org1/org2, Б: org3/org4).
+pw_a() { for pair in $ORG_USER_PASSWORDS_A; do case "$pair" in "$1"=*) echo "${pair#*=}"; return;; esac; done; }
+pw_b() { for pair in $ORG_USER_PASSWORDS_B; do case "$pair" in "$1"=*) echo "${pair#*=}"; return;; esac; done; }
+pw() { case "$1" in org1*|org2*) pw_a "$1";; *) pw_b "$1";; esac; }
+
 step "Поднимаю Узел А (build + up) — создаёт сеть reberos"
 "${CA[@]}" up -d --build
 
@@ -68,7 +73,7 @@ fi
 step "3. GSSAPI ldap-a с билетом ORG1 (домашний realm)"
 exec_c "echo '$ALICE_PASSWORD' | kinit alice@$ORG1_REALM" >/dev/null 2>&1 || true
 WHO="$(exec_c "ldapwhoami -Y GSSAPI -Q -H ldap://$LDAP_A_HOST" 2>/dev/null || true)"
-if echo "$WHO" | grep -q "uid=alice,ou=people"; then
+if echo "$WHO" | grep -q "uid=alice,ou=org1,ou=people"; then
     ok "authz: $WHO"
 else
     bad "ожидался uid=alice, получено: '$WHO'"
@@ -77,7 +82,7 @@ fi
 step "4. GSSAPI ldap-a с билетом ORG2 (cross-realm внутри узла)"
 exec_c "echo '$ALICE_PASSWORD' | kinit alice@$ORG2_REALM" >/dev/null 2>&1 || true
 WHO="$(exec_c "ldapwhoami -Y GSSAPI -Q -H ldap://$LDAP_A_HOST" 2>/dev/null || true)"
-if echo "$WHO" | grep -q "uid=alice,ou=people"; then
+if echo "$WHO" | grep -q "uid=alice,ou=org1,ou=people"; then
     ok "cross-realm authz: $WHO"
 else
     bad "cross-realm GSSAPI не прошёл; получено: '$WHO'"
@@ -86,7 +91,7 @@ fi
 step "5. GSSAPI ldap-b с билетом ORG3 (домашний realm узла Б)"
 exec_c "echo '$ALICE_PASSWORD' | kinit alice@$ORG3_REALM" >/dev/null 2>&1 || true
 WHO="$(exec_c "ldapwhoami -Y GSSAPI -Q -H ldap://$LDAP_B_HOST" 2>/dev/null || true)"
-if echo "$WHO" | grep -q "uid=alice,ou=people"; then
+if echo "$WHO" | grep -q "uid=alice,ou=org3,ou=people"; then
     ok "authz: $WHO"
 else
     bad "ожидался uid=alice, получено: '$WHO'"
@@ -95,7 +100,7 @@ fi
 step "6. GSSAPI ldap-b с билетом ORG4 (cross-realm внутри узла Б)"
 exec_c "echo '$ALICE_PASSWORD' | kinit alice@$ORG4_REALM" >/dev/null 2>&1 || true
 WHO="$(exec_c "ldapwhoami -Y GSSAPI -Q -H ldap://$LDAP_B_HOST" 2>/dev/null || true)"
-if echo "$WHO" | grep -q "uid=alice,ou=people"; then
+if echo "$WHO" | grep -q "uid=alice,ou=org3,ou=people"; then
     ok "cross-realm authz: $WHO"
 else
     bad "cross-realm GSSAPI не прошёл; получено: '$WHO'"
@@ -212,6 +217,110 @@ if exec_c "spnego-check http://$WEB_A_HOST/me" >/dev/null 2>&1; then
     bad "/me открыл без OIDC-сессии"
 else
     ok "/me без сессии отклонён (HTTP 401)"
+fi
+
+step "20. orgNuserM: kinit в свой realm (индивидуальные пароли)"
+# Логин привязан к организации: org1user1@ORG1, org2user1@ORG2 и т.д.
+for U in org1user1 org2user1 org3user1 org4user1; do
+    R="${U%%user*}"; R="$(echo "$R" | tr 'a-z' 'A-Z').TEST"
+    P="$(pw "$U")"
+    if exec_c "echo '$P' | kinit $U@$R" >/dev/null 2>&1; then
+        ok "kinit $U@$R"
+    else
+        bad "kinit $U@$R не прошёл (пароль '$P')"
+    fi
+done
+
+step "21. изоляция: org1user1@ORG1 -> uid=org1user1,ou=org1,ou=people..."
+exec_c "echo '$(pw org1user1)' | kinit org1user1@$ORG1_REALM" >/dev/null 2>&1 || true
+WHO="$(exec_c "ldapwhoami -Y GSSAPI -Q -H ldap://$LDAP_A_HOST" 2>/dev/null || true)"
+if echo "$WHO" | grep -q "uid=org1user1,ou=org1,ou=people"; then
+    ok "authz: $WHO"
+else
+    bad "ожидался uid=org1user1,ou=org1,ou=people; получено: '$WHO'"
+fi
+
+step "22. изоляция: org1user1@ORG1 видит ТОЛЬКО свою ветку (org1), не org2"
+exec_c "echo '$(pw org1user1)' | kinit org1user1@$ORG1_REALM" >/dev/null 2>&1 || true
+V1="$(exec_c "ldapsearch -Y GSSAPI -Q -H ldap://$LDAP_A_HOST -b ou=org1,ou=people,dc=lab,dc=test '(uid=org1user1)' dn" 2>/dev/null || true)"
+if echo "$V1" | grep -q "uid=org1user1,ou=org1"; then
+    ok "org1user1 видит свою ветку org1"
+else
+    bad "org1user1 не видит свою ветку; вывод: $(echo "$V1" | tr '\n' ' ' | head -c 200)"
+fi
+V2="$(exec_c "ldapsearch -Y GSSAPI -Q -H ldap://$LDAP_A_HOST -b ou=org2,ou=people,dc=lab,dc=test '(uid=org2user1)' dn" 2>/dev/null || true)"
+if echo "$V2" | grep -q "uid=org2user1,ou=org2"; then
+    bad "org1user1@ORG1 увидел ветку org2!"
+else
+    ok "org1user1 не видит ветку org2 (изоляция)"
+fi
+
+step "23. cross-realm: org2user1@ORG2 маппится в org2, org1 недоступна"
+exec_c "echo '$(pw org2user1)' | kinit org2user1@$ORG2_REALM" >/dev/null 2>&1 || true
+WHO="$(exec_c "ldapwhoami -Y GSSAPI -Q -H ldap://$LDAP_A_HOST" 2>/dev/null || true)"
+if echo "$WHO" | grep -q "uid=org2user1,ou=org2,ou=people"; then
+    ok "authz: $WHO"
+else
+    bad "ожидался uid=org2user1,ou=org2,ou=people; получено: '$WHO'"
+fi
+W1="$(exec_c "ldapsearch -Y GSSAPI -Q -H ldap://$LDAP_A_HOST -b ou=org1,ou=people,dc=lab,dc=test '(uid=org1user1)' dn" 2>/dev/null || true)"
+if echo "$W1" | grep -q "uid=org1user1,ou=org1"; then
+    bad "org2user1@ORG2 увидел ветку org1!"
+else
+    ok "org2user1@ORG2 не видит ветку org1 (cross-realm изоляция)"
+fi
+
+step "24. админ узла: admin@ORG1 видит org1 и org2"
+exec_c "echo '$NODE_ADMIN_PASSWORD' | kinit admin@$ORG1_REALM" >/dev/null 2>&1 || true
+WHO="$(exec_c "ldapwhoami -Y GSSAPI -Q -H ldap://$LDAP_A_HOST" 2>/dev/null || true)"
+if echo "$WHO" | grep -q "uid=admin,ou=admins"; then
+    ok "authz: $WHO"
+else
+    bad "ожидался uid=admin,ou=admins; получено: '$WHO'"
+fi
+A1="$(exec_c "ldapsearch -Y GSSAPI -Q -H ldap://$LDAP_A_HOST -b ou=org1,ou=people,dc=lab,dc=test '(uid=org1user1)' dn" 2>/dev/null || true)"
+A2="$(exec_c "ldapsearch -Y GSSAPI -Q -H ldap://$LDAP_A_HOST -b ou=org2,ou=people,dc=lab,dc=test '(uid=org2user1)' dn" 2>/dev/null || true)"
+if echo "$A1" | grep -q "uid=org1user1,ou=org1" && echo "$A2" | grep -q "uid=org2user1,ou=org2"; then
+    ok "admin видит обе организации узла"
+else
+    bad "admin не видит обе ветки (org1:'$(echo "$A1" | tr '\n' ' ' | head -c 120)' org2:'$(echo "$A2" | tr '\n' ' ' | head -c 120)')"
+fi
+
+step "25. alice (smoke-исключение) читает обе ветки"
+exec_c "echo '$ALICE_PASSWORD' | kinit alice@$ORG1_REALM" >/dev/null 2>&1 || true
+S1="$(exec_c "ldapsearch -Y GSSAPI -Q -H ldap://$LDAP_A_HOST -b ou=org1,ou=people,dc=lab,dc=test '(uid=org1user1)' dn" 2>/dev/null || true)"
+S2="$(exec_c "ldapsearch -Y GSSAPI -Q -H ldap://$LDAP_A_HOST -b ou=org2,ou=people,dc=lab,dc=test '(uid=org2user1)' dn" 2>/dev/null || true)"
+if echo "$S1" | grep -q "uid=org1user1,ou=org1" && echo "$S2" | grep -q "uid=org2user1,ou=org2"; then
+    ok "alice читает org1 и org2 (исключение)"
+else
+    bad "alice не видит обе ветки (org1:'$(echo "$S1" | tr '\n' ' ' | head -c 120)' org2:'$(echo "$S2" | tr '\n' ' ' | head -c 120)')"
+fi
+
+step "26. Keycloak: вход org1user1 — LDAP-федерация видит обе org (нет username_in_use)"
+# SPNEGO-билет org1user1@ORG1 + логин-форма Keycloak как org1user1.
+exec_c "echo '$(pw org1user1)' | kinit org1user1@$ORG1_REALM" >/dev/null 2>&1 || true
+if exec_c "oidc-check http://$WEB_A_HOST $ORG1_REALM org1user1 '$(pw org1user1)'" >/tmp/oidc-u1.out 2>&1; then
+    ok "org1user1: OIDC-вход прошёл (usersDn=ou=people)"
+else
+    bad "org1user1: OIDC-вход не прошёл; вывод: $(cat /tmp/oidc-u1.out | tr '\n' ' ' | head -c 500)"
+fi
+# org2user1 виден в Keycloak (уникальные логины — обе организации).
+exec_c "echo '$(pw org2user1)' | kinit org2user1@$ORG2_REALM" >/dev/null 2>&1 || true
+if exec_c "oidc-check http://$WEB_A_HOST $ORG2_REALM org2user1 '$(pw org2user1)'" >/tmp/oidc-u2.out 2>&1; then
+    ok "org2user1: OIDC-вход прошёл (Keycloak видит и org2)"
+else
+    bad "org2user1: OIDC-вход не прошёл; вывод: $(cat /tmp/oidc-u2.out | tr '\n' ' ' | head -c 500)"
+fi
+
+step "27. портал: org-gate — org1user1@ORG1 не входит в чужую ORG2"
+# Билет org1user1@ORG1: домашняя ORG1 -> 302, чужая ORG2 -> 403.
+exec_c "echo '$(pw org1user1)' | kinit org1user1@$ORG1_REALM" >/dev/null 2>&1 || true
+C_OWN="$(exec_c "curl -s -o /dev/null -w '%{http_code}' --negotiate -u : 'http://$WEB_A_HOST/login?org=$ORG1_REALM'" 2>/dev/null || true)"
+C_OTHER="$(exec_c "curl -s -o /dev/null -w '%{http_code}' --negotiate -u : 'http://$WEB_A_HOST/login?org=$ORG2_REALM'" 2>/dev/null || true)"
+if [ "$C_OWN" = "302" ] && [ "$C_OTHER" = "403" ]; then
+    ok "домашняя ORG1=$C_OWN, чужая ORG2=$C_OTHER (org-gate)"
+else
+    bad "org-gate: ожидалось ORG1=302/ORG2=403, получено ORG1=$C_OWN/ORG2=$C_OTHER"
 fi
 
 echo

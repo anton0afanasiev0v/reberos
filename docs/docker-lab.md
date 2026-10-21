@@ -73,8 +73,13 @@ docker compose -f compose-client.yml exec client bash
 
 echo "$ALICE_PASSWORD" | kinit alice@ORG1.TEST
 ldapwhoami -Y GSSAPI -Q -H ldap://ldap-a.lab.test      # uid=alice,ou=people,...
-ldapwhoami -Y GSSAPI -Q -H ldap://ldap-a.lab.test      # после kinit ORG2 — cross-realm
 ldapwhoami -Y GSSAPI -Q -H ldap://ldap-b.lab.test      # ОТКАЗ (нет доверия между узлами)
+
+# изоляция организаций (логин = orgNuserM, свой пароль на пользователя):
+echo 'Org1User1_2024' | kinit org1user1@ORG1.TEST
+ldapwhoami -Y GSSAPI -Q -H ldap://ldap-a.lab.test      # uid=org1user1,ou=org1,ou=people,...
+echo 'Org2User1_2024' | kinit org2user1@ORG2.TEST
+ldapwhoami -Y GSSAPI -Q -H ldap://ldap-a.lab.test      # uid=org2user1,ou=org2,ou=people,... (cross-realm)
 
 # уровень 1 + уровень 2 целиком:
 spnego-check http://web-a.lab.test/
@@ -89,25 +94,67 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8081/     # 401 (не�
 
 ## Кто куда имеет доступ
 
-Пользователь в лаборатории один — **`alice`**; пароль `ALICE_PASSWORD`
-(`Alice_Secret_2024`) одинаков во всех 4 realm. Отличается только realm,
-которому принадлежит билет, и это определяет доступ:
+Учётные записи лаборатории:
 
-| Билет (`kinit`) | `ldap-a` (Узел А) | `ldap-b` (Узел Б) | `web-a` (SPNEGO) | `web-b` (SPNEGO) |
+| Логин (`kinit`) | Пароль (env) | Realm'ы | LDAP-ветка | Права в LDAP узла |
 |---|---|---|---|---|
-| `alice@ORG1.TEST` | ✅ | ❌ | ✅ | ❌ |
-| `alice@ORG2.TEST` | ✅ (cross-realm) | ❌ | ✅ (cross-realm) | ❌ |
-| `alice@ORG3.TEST` | ❌ | ✅ | ❌ | ✅ |
-| `alice@ORG4.TEST` | ❌ | ✅ (cross-realm) | ❌ | ✅ (cross-realm) |
+| `orgNuser1..5` (`org1user1`, `org2user1`, …) | `ORG_USER_PASSWORDS_A/B` (свой у каждого) | свой realm ORG N | `ou=orgN,ou=people` | read **только** своей организации |
+| `alice` | `ALICE_PASSWORD` | все 4 | `ou=orgN(primary),ou=people` | read обеих org-веток (smoke-исключение) |
+| `admin` (админ узла) | `NODE_ADMIN_PASSWORD` | ORG1 (Узел А), ORG3 (Узел Б) | `ou=admins` | write на **всю** базу узла |
+| `admin/admin` | `ADMIN_PASSWORD` | все | — (только kadmin) | LDAP-прав нет |
+
+Логин **уникален** в деревне (org-префикс), поэтому Keycloak-федерация
+(`usersDn=ou=people`, `searchScope=sub`) видит **обе** организации узла без
+конфликта `username_in_use`. Список логинов: `SYSTEM_USERS` в `.env`
+(портал показывает его на главной).
+
+Доступ по билету (Узел А; на Узле Б `ORG1→ORG3`, `ORG2→ORG4`):
+
+| Билет (`kinit`) | `ldap-a` | `web-a` (SPNEGO) | видит в LDAP |
+|---|---|---|---|
+| `org1user1@ORG1.TEST` | ✅ | ✅ | только `ou=org1` |
+| `org2user1@ORG2.TEST` | ✅ (cross-realm) | ✅ (cross-realm) | только `ou=org2` |
+| `alice@ORG1/ORG2.TEST` | ✅ | ✅ | обе ветки (исключение) |
+| `admin@ORG1.TEST` | ✅ | ✅ | обе ветки + admins |
+| любой билет Узла Б | ❌ | ❌ | — (межузлового доверия нет) |
 
 - **Внутри узла доверие есть**: билет ORG1 и ORG2 одинаково открывают
-  `ldap-a`/`web-a` (ORG3/ORG4 — `ldap-b`/`web-b`).
+  `ldap-a`/`web-a`, но LDAP-ACL разводит их по разным org-веткам.
 - **Между узлами доверия нет**: билет ORG1 не даёт доступа к `ldap-b`/`web-b`.
 - После OIDC-входа портал `/me` отдаёт `id_token` и claims (организация +
   SPNEGO-личность).
-- Админ-доступы (не для `alice`): Kerberos `admin/admin` (`ADMIN_PASSWORD`),
-  LDAP rootdn `cn=admin,dc=lab,dc=test` (`LDAP_ADMIN_PASSWORD`),
-  Keycloak `admin` (`KEYCLOAK_ADMIN_PASSWORD`).
+- Служебные админ-доступы: LDAP rootdn `cn=admin,dc=lab,dc=test`
+  (`LDAP_ADMIN_PASSWORD`), Keycloak `admin` (`KEYCLOAK_ADMIN_PASSWORD`).
+
+### Изоляция организаций (Kerberos + LDAP ACL)
+
+`dc=lab,dc=test` — одна база на узел; обе организации разведены по веткам
+`ou=orgN,ou=people` (`ou=org1`/`ou=org2` на Узле А, `org3`/`org4` на Б):
+
+- `authz-regexp` в `slapd.conf` маппит принципал в ветку **по realm**.
+- ACL: `ou=orgN` читает только DN из своей ветки; `admin` узла — write на
+  всё; `alice` — явное `read` на обе ветки; default deny.
+- Логины **уникальны** (`orgNuserM`, org-префикс) — `uid` не дублируется.
+- **Keycloak (уровень 2) смотрит всю ветку `ou=people`** (`usersDn=ou=people`,
+  `searchScope=sub`) и видит **обе** организации узла: уникальные логины
+  исключают `username_in_use`.
+- **Org-gate портала**: портал сверяет запрошенную организацию (`/login?org=`)
+  с realm SPNEGO-личности (`X-Remote-User = orgNuserM@REALM`). Несовпадение →
+  `403`, а на главной показываются только доступные организации. Так
+  `org1user1@ORG1.TEST` не войдёт в `ORG2.TEST` даже при валидной Keycloak-сессии.
+
+**Важная деталь (проверено на OpenLDAP 2.5 + MIT GSSAPI):** принципал
+**домашнего** realm узла приходит в LDAP **без realm** (`uid=org1user1,...`), а
+**cross-realm** — **с realm** и в **нижнем** регистре (`uid=org2user1@org2.test,...`).
+Поэтому в `authz-regexp`:
+
+- cross-realm-правила (с realm) идут первыми;
+- realmless-форма (домашний realm узла) — **последним** правилом и уходит в
+  **primary**-ветку узла (`ou=org1` на А, `ou=org3` на Б).
+
+POSIX-ERE в slapd **не поддерживает** inline-флаг `(?i)`, поэтому realm в
+regex раскрывается посимвольно: `ORG2.TEST → [Oo][Rr][Gg]2[.][Tt][Ee][Ss][Tt]`
+(генерируется в `ldap/entrypoint.sh`).
 
 ## `kinit` на локальном ПК (пошагово)
 
@@ -205,8 +252,8 @@ Firefox **.deb** (не snap — см. п. 9), в `about:config` →
 1. **`authz-regexp`, а не `sasl-regexp`.** В OpenLDAP 2.5 (Debian 12)
    директива маппинга SASL-идентичности называется `authz-regexp`, стоит в
    глобальной секции — до `database`. Матчит
-   `uid=<user>[@REALM],cn=gssapi,cn=auth` → `uid=$1,ou=people,dc=lab,dc=test`.
-   Проверка: `ldapwhoami -Y GSSAPI` даёт `dn:uid=alice,ou=people,...`.
+   `uid=<user>[@REALM],cn=gssapi,cn=auth` → `uid=$1,ou=${LDAP_OU_PRIMARY},ou=people,...`.
+   Проверка: `ldapwhoami -Y GSSAPI` даёт `dn:uid=alice,ou=org1,ou=people,...`.
 2. **Принципал Apache — заглавными `HTTP/host`.** `http/...` и `HTTP/...` —
    разные записи; SPNEGO-клиенты и `mod_auth_gssapi` используют `HTTP/...`.
 3. **DNS Docker ломает канонизацию имён.** PTR вида
@@ -235,6 +282,12 @@ Firefox **.deb** (не snap — см. п. 9), в `about:config` →
     redirect из заголовка `Host`, поэтому нужны оба.
 12. **Порядок запуска.** Сеть `reberos` создаёт Узел А; Узел Б и клиент
     объявляют её `external` и упадут, если А ещё не поднят.
+13. **authz-regexp: realmless vs cross-realm.** Домашний realm узла приходит
+    без `@realm`, cross-realm — с realm в нижнем регистре. Порядок правил
+    важен (см. «Изоляция организаций»). POSIX-ERE в slapd не знает `(?i)` —
+    регистр раскрывается посимвольно (`[Oo][Rr][Gg]...`).
+14. **userPassword-ACL — первым правилом.** Иначе `dn.subtree`-правило даёт
+    `read` на хэш пароля вместе с записью.
 
 ## Диагностика
 
@@ -256,8 +309,11 @@ docker compose -f compose-node-a.yml exec kdc-a1 kadmin.local -q listprincs
 - `Server krbtgt/... not found` — канонизация DNS (п. 3) или отсутствует
   `[capaths]` (п. 8).
 - `Server HTTP/web-a.lab.test not found` — регистр принципала (п. 2).
-- `ldapwhoami` вернул `uid=alice,cn=gssapi,cn=auth` — не применился
-  `authz-regexp` (п. 1).
+- `ldapwhoami` вернул `uid=org1user1,cn=gssapi,cn=auth` (без OU) — не применился
+  `authz-regexp` (п. 1, 13).
+- `org1user1@ORG1` видит записи `ou=org2` — ошибка в ACL/порядке правил (п. 14).
+- `org2user1@ORG2` попал в `ou=org1` — cross-realm не сматчился (регистр realm
+  в regex, п. 13).
 - Портал зациклился на `401 Negotiate` — `/auth` попал под SPNEGO (п. 9).
 - OIDC `redirect_uri` mismatch — не совпал Host/порт (п. 11).
 - `kinit: Cannot contact any KDC for realm` с хоста — KDC не опубликован

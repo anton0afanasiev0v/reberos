@@ -7,6 +7,10 @@ KDC_HOST="${KDC_HOST:?KDC_HOST is required}"
 KDC_MASTER_KEY="${KDC_MASTER_KEY:?KDC_MASTER_KEY is required}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}"
 ALICE_PASSWORD="${ALICE_PASSWORD:?ALICE_PASSWORD is required}"
+# Индивидуальные пароли "логин=пароль ..." (логин уже с org-префиксом).
+ORG_USER_PASSWORDS="${ORG_USER_PASSWORDS:-}"
+NODE_ADMIN_PASSWORD="${NODE_ADMIN_PASSWORD:-}"
+CREATE_ORG_USERS="${CREATE_ORG_USERS:-0}"
 # Префикс keytab-файлов: общий том /keytabs на узел, файлы с именем
 # <prefix>-<role>.keytab (a1-ldap.keytab, b3-http.keytab и т.п.)
 KEYTAB_PREFIX="${KEYTAB_PREFIX:-${REALM,,}}"
@@ -71,6 +75,21 @@ ensure_service_principal() {
 
 ensure_user_principal "admin/admin" "$ADMIN_PASSWORD"
 ensure_user_principal "alice" "$ALICE_PASSWORD"
+
+# Рабочие пользователи организаций (логины orgNuserM с индивидуальным паролем).
+if [ "$CREATE_ORG_USERS" = "1" ]; then
+    [ -n "$ORG_USER_PASSWORDS" ] || { log "ОШИБКА: CREATE_ORG_USERS=1 требует ORG_USER_PASSWORDS"; exit 1; }
+    for pair in $ORG_USER_PASSWORDS; do
+        u="${pair%%=*}"
+        p="${pair#*=}"
+        [ -n "$u" ] && [ "$u" != "$p" ] || { log "ОШИБКА: плохая пара логин=пароль: '$pair'"; exit 1; }
+        ensure_user_principal "$u" "$p"
+    done
+    # «Админ узла» — короткое имя admin (отдельный принципал; admin/admin — для kadmin).
+    if [ -n "$NODE_ADMIN_PASSWORD" ]; then
+        ensure_user_principal "admin" "$NODE_ADMIN_PASSWORD"
+    fi
+fi
 
 if [ "$CREATE_SERVICES" = "1" ]; then
     [ -n "$LDAP_HOST" ] || { log "ОШИБКА: CREATE_SERVICES=1 требует LDAP_HOST"; exit 1; }

@@ -83,10 +83,24 @@ authorization code → portal /callback → id_token в сессии → /me
   импортируется при старте, confidential-клиент `portal` с redirect
   `http://web-x.lab.test[:port]/callback` и `http://web-x.lab.test/callback`.
 
-Учётные данные (только лаборатория!): `alice` / `ALICE_PASSWORD` (один
-пароль во всех 4 realm), Kerberos `admin/admin`, LDAP rootdn
-`cn=admin,dc=lab,dc=test` / `LDAP_ADMIN_PASSWORD`, Keycloak admin
-`admin` / `KEYCLOAK_ADMIN_PASSWORD` (админка — `http://127.0.0.1:8091/`
+- **Изоляция организаций (Kerberos + LDAP ACL)**: `dc=lab,dc=test` — одна
+  база на узел, организации разведены по веткам `ou=orgN,ou=people`.
+  `authz-regexp` маппит принципал в ветку по realm; пользователь читает
+  только свою ветку. Логины уникальны (`orgNuserM`), поэтому Keycloak
+  (уровень 2) видит **обе** организации узла (`usersDn=ou=people`).
+  Тонкости realmless/cross-realm — в `docs/docker-lab.md`.
+
+Учётные данные (только лаборатория!):
+- `orgNuser1..5` (`org1user1`, `org2user1`, …) / `ORG_USER_PASSWORDS_A/B`
+  (индивидуальный пароль каждому) — рабочие пользователи, realm ORG N,
+  доступ только к своей организации; полный список — `SYSTEM_USERS` в `.env`
+  (портал показывает его на главной);
+- `alice` / `ALICE_PASSWORD` — smoke-пользователь (один пароль во всех
+  4 realm, видит обе ветки узла);
+- `admin` (админ узла) / `NODE_ADMIN_PASSWORD` — `ou=admins`, write на всю
+  базу узла; Kerberos `admin/admin` / `ADMIN_PASSWORD` — для kadmin;
+- LDAP rootdn `cn=admin,dc=lab,dc=test` / `LDAP_ADMIN_PASSWORD`, Keycloak
+  `admin` / `KEYCLOAK_ADMIN_PASSWORD` (админка — `http://127.0.0.1:8091/`
 и `:8092`).
 
 ## Документация

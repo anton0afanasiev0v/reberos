@@ -24,5 +24,5 @@ sed -e "s|\${KC_REALM}|$KC_REALM|g" \
     -e "s|\${DC_BASE}|$DC_BASE|g" \
     /templates/realm-node.json.tpl > "/opt/keycloak/data/import/realm-node.json"
 
-log "realm ${KC_REALM}: OIDC-only (web-форма), LDAP-федерация ${LDAP_HOST}, portal -> ${PUBLIC_WEB_BASE}/callback"
+log "realm ${KC_REALM}: OIDC-only (web-форма), LDAP-федерация ${LDAP_HOST} (ou=people), portal -> ${PUBLIC_WEB_BASE}/callback"
 exec /opt/keycloak/bin/kc.sh "$@"

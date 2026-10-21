@@ -30,11 +30,14 @@ services:
       WEB_HOST: ${WEB_B_HOST}
       KEYTAB_PREFIX: b3
       CREATE_SERVICES: "1"
+      CREATE_ORG_USERS: "1"
       CROSS_REALM_REALM: ${ORG4_REALM}
       CROSS_REALM_KEY: ${CROSS_REALM_KEY}
       KDC_MASTER_KEY: ${KDC_MASTER_KEY}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
       ALICE_PASSWORD: ${ALICE_PASSWORD}
+      ORG_USER_PASSWORDS: ${ORG_USER_PASSWORDS_B}
+      NODE_ADMIN_PASSWORD: ${NODE_ADMIN_PASSWORD}
     volumes:
       - keytabs-b:/keytabs
     healthcheck:
@@ -61,11 +64,13 @@ services:
       DOMAIN: ${DOMAIN}
       KDC_HOST: ${KDC_B4_HOST}
       KEYTAB_PREFIX: b4
+      CREATE_ORG_USERS: "1"
       CROSS_REALM_REALM: ${ORG3_REALM}
       CROSS_REALM_KEY: ${CROSS_REALM_KEY}
       KDC_MASTER_KEY: ${KDC_MASTER_KEY}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
       ALICE_PASSWORD: ${ALICE_PASSWORD}
+      ORG_USER_PASSWORDS: ${ORG_USER_PASSWORDS_B}
     volumes:
       - keytabs-b:/keytabs
     healthcheck:
@@ -95,6 +100,13 @@ services:
       KEYTAB_FILE: /keytabs/b3-ldap.keytab
       LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD}
       ALICE_PASSWORD: ${ALICE_PASSWORD}
+      ORG_USER_PASSWORDS: ${ORG_USER_PASSWORDS_B}
+      ORG_OUS: ${ORG_OUS_B}
+      NODE_ADMIN_PASSWORD: ${NODE_ADMIN_PASSWORD}
+      LDAP_REALM_PRIMARY: ${LDAP_REALM_PRIMARY_B}
+      LDAP_OU_PRIMARY: ${LDAP_OU_PRIMARY_B}
+      LDAP_REALM_SECONDARY: ${LDAP_REALM_SECONDARY_B}
+      LDAP_OU_SECONDARY: ${LDAP_OU_SECONDARY_B}
       KRB5_KTNAME: FILE:/keytabs/b3-ldap.keytab
     volumes:
       - keytabs-b:/keytabs:ro
@@ -173,6 +185,8 @@ services:
       CLIENT_ID: portal
       CLIENT_SECRET: ${PORTAL_CLIENT_SECRET}
       KC_INTERNAL: http://${KEYCLOAK_B_HOST}:8080/auth
+      # Полный список пользователей системы (только логины, для отображения).
+      SYSTEM_USERS: ${SYSTEM_USERS}
     depends_on:
       keycloak-b:
         condition: service_started
