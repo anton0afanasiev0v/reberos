@@ -19,3 +19,7 @@ __pycache__/
 # Бандлы образов для переноса на второй узел
 *.tar.zst
 *.tar.zst.id
+
+# Офлайн-дистрибутивы для нативного узла Astra (Keycloak, JRE) — ~200 МБ, в git не коммитим
+vendor/*.tar.gz
+vendor/*.zip

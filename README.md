@@ -58,6 +58,43 @@ docker compose --env-file .env --env-file deploy/env-b.env \
 realm Keycloak через Apache `/auth` без SPNEGO, полный OIDC-флоу через
 портал (SPNEGO → логин-форма → `id_token`) и отказ `/me` без сессии.
 
+## Нативный узел на Astra Linux SE 1.7 (без Docker)
+
+Один узел с двумя организациями: **один** `krb5kdc` с двумя realm'ами
+(`ORG1.TEST` и `ORG2.TEST`, раздельные БД/stash/ACL), OpenLDAP с GSSAPI,
+изоляция организаций по веткам `ou=org1` / `ou=org2` и **Keycloak 26.8.1**
+(realm `lab-a`, LDAP-федерация на наш slapd — как в лаборатории).
+
+```bash
+# на узле (Astra)
+sudo chmod 600 deploy/astra-node-a.env      # там пароли
+chmod 700 scripts/*.sh
+sudo ./scripts/astra-node-a.sh --dry-run     # план установки
+sudo ./scripts/astra-node-a.sh               # установка (идемпотентно)
+sudo ./scripts/astra-node-a-verify.sh        # проверки (ожидаемо FAIL=0)
+sudo ./scripts/astra-node-a-remove.sh        # полное удаление (откат)
+
+# на локальном ПК (клиент: kinit, GSSAPI, браузер)
+sudo apt install krb5-user ldap-utils libsasl2-modules-gssapi-mit
+./scripts/astra-node-a-client.sh --check
+sudo ./scripts/astra-node-a-client.sh --server 172.16.138.25
+```
+
+После этого с ПК: `kinit alice@ORG1.TEST` (`Alice_Secret_2024`),
+`ldapwhoami -Y GSSAPI -H ldap://ldap-a.lab.test`, Keycloak —
+<http://keycloak-a.lab.test:8080/auth>. Пошагово «с нуля» (сервер, клиент,
+пользование, откат, типовые ошибки) —
+[docs/astra-node-a-quickstart.md](docs/astra-node-a-quickstart.md).
+
+Интернета на узле нет, поэтому Keycloak и JRE берутся из `vendor/` — перед
+переносом положите туда `keycloak-26.8.1.tar.gz` (и, если в репозиториях
+Astra нет `openjdk-17`, `temurin17-jre-x64-linux.tar.gz`); см.
+[vendor/README.md](vendor/README.md).
+
+Подробности (пакеты, `kdc.conf` с двумя realm'ами, кросс-реалмовое доверие,
+`slapd` как unit, `sasl-regexp` вместо `authz-regexp`, Keycloak, таблица
+проблем) — в [docs/astra-node-a.md](docs/astra-node-a.md).
+
 ## Состав
 
 | Проект | Сервис | Адрес | Роль |
@@ -136,6 +173,12 @@ authorization code → portal /callback → id_token в сессии → /me
   диаграмма целевой архитектуры (два узла, два уровня авторизации).
 - [docs/astra-1.7-kerberos.md](docs/astra-1.7-kerberos.md) — нативное
   развёртывание Kerberos + OpenLDAP GSSAPI + Apache на Astra Linux SE 1.7.
+- [docs/astra-node-a.md](docs/astra-node-a.md) — нативный «Узел А» на
+  Astra Linux SE 1.7: один `krb5kdc` с двумя realm'ами (2 организации) +
+  OpenLDAP GSSAPI; установка, проверки, клиент, полное удаление.
+- [docs/astra-node-a-quickstart.md](docs/astra-node-a-quickstart.md) —
+  «с нуля»: сервер, клиент, как пользоваться (`kinit`, GSSAPI, Keycloak),
+  эксплуатация, типовые ошибки.
 
 ## Структура
 
@@ -150,24 +193,35 @@ authorization code → portal /callback → id_token в сессии → /me
 ├── compose-node-b.host.yml  # override: Узел Б на отдельном хосте (host-network)
 ├── compose-client.host.yml  # override: клиент в host-network
 ├── deploy/                  # схема «два хоста»: env и /etc/hosts по узлам
+│   ├── env-a.env
+│   ├── env-b.env
+│   └── astra-node-a.env     # параметры нативного узла на Astra 1.7
 ├── common/krb5.conf.tpl     # шаблон krb5.conf (один realm; серверы)
 ├── client/krb5.conf.tpl     # клиентский krb5.conf: 4 realm + capaths
 ├── kdc/                     # образ и entrypoint KDC (+ cross-realm)
 ├── ldap/                    # slapd + authz-regexp + seed-каталог
 ├── apache/                  # Apache: SPNEGO на portal, /auth без SPNEGO
 ├── keycloak/                # Keycloak: OIDC-only realm + LDAP-федерация
+├── vendor/                  # офлайн-дистрибутивы для Astra (Keycloak, JRE) — в git не коммится
 ├── portal/                  # портал выбора организации (Python, stdlib)
 ├── docs/
 │   ├── host-krb5-node-a.conf.example   # krb5.conf для kinit с локального ПК (А)
 │   ├── host-krb5-node-b.conf.example   # krb5.conf для kinit с локального ПК (Б)
 │   ├── two-hosts.md        # развёртывание на двух хостах через канал 2 МБ/с
+│   ├── astra-node-a.md     # нативный узел на Astra 1.7 (2 организации)
+│   ├── astra-node-a-quickstart.md  # сервер+клиент «с нуля», пользование
 │   └── docker-lab.md
 └── scripts/
-    ├── verify.sh            # сквозная проверка (27 тестов)
+    ├── verify.sh            # сквозная проверка (28 тестов)
     ├── verify-remote.sh     # то же, но Узел Б на удалённой машине
     ├── build-images.sh      # единая сборка образов lab/<svc>:1
     ├── sync-node-b.sh       # перенос образов на Узел Б (bundle|registry|build)
     ├── install-hosts.sh     # фрагмент /etc/hosts для хоста
+    ├── astra-node-a.sh      # нативная установка KDC+LDAP+Keycloak на Astra 1.7
+    ├── astra-node-a-verify.sh  # проверки нативного узла
+    ├── astra-node-a-client.sh  # настройка локального ПК как клиента
+    ├── astra-node-a-remove.sh  # полное удаление нативного узла
+    ├── templates/           # встроенные шаблоны для узла (ldap/, keycloak/)
     └── reset.sh             # остановка с удалением данных
 ```
 

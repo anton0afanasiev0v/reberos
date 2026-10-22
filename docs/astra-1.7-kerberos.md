@@ -283,6 +283,10 @@ sudo klist -k /etc/krb5.keytab                 # состав keytab
 
 ## Ссылки
 
+- [docs/astra-node-a.md](astra-node-a.md) — готовый «Узел А» на Astra 1.7:
+  один `krb5kdc` с **двумя** realm'ами (две организации, кросс-реалмовое
+  доверие) + OpenLDAP GSSAPI с изоляцией `ou=orgN`; скрипты установки,
+  проверки и полного удаления.
 - [Kerberos (wiki.astralinux.ru)](https://wiki.astralinux.ru/display/doc/Kerberos) —
   установка и базовая настройка Kerberos в Astra Linux (статья применима
   к SE 1.7 и 1.8).
