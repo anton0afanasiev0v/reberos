@@ -58,7 +58,7 @@ if ! systemctl is-active --quiet "$SLAPD_UNIT"; then
 fi
 
 step "Имена и окружение"
-for h in "$KDC_A_HOST" "$KDC_B_HOST" "$LDAP_HOST" "$KEYCLOAK_HOST"; do
+for h in "$KDC_A_HOST" "$KDC_B_HOST" "$LDAP_HOST"; do
     if getent hosts "$h" >/dev/null 2>&1; then ok "$h резолвится"; else bad "$h НЕ резолвится (нужна запись в /etc/hosts)"; fi
 done
 # GSSAPI-клиент берёт имя сервиса из ОБРАТНОГО резолва peer'а: у ldap-a
@@ -293,76 +293,6 @@ if command -v timedatectl >/dev/null 2>&1; then
     fi
 else
     bad "timedatectl недоступен — нельзя проверить синхронизацию времени"
-fi
-
-# ============================== Keycloak ==============================
-if [ "${SKIP_KEYCLOAK:-0}" != "1" ]; then
-    step "Keycloak"
-    if systemctl is-active --quiet "$KEYCLOAK_UNIT"; then ok "$KEYCLOAK_UNIT active"; else bad "$KEYCLOAK_UNIT НЕ active"; fi
-    if port_listening "$KEYCLOAK_HTTP_PORT" tcp; then
-        ok "$KEYCLOAK_HTTP_PORT/tcp (Keycloak) слушается"
-    else
-        bad "$KEYCLOAK_HTTP_PORT/tcp (Keycloak) НЕ слушается"
-    fi
-    if [ -x "$KEYCLOAK_HOME/bin/kc.sh" ]; then ok "дистрибутив Keycloak на месте ($KEYCLOAK_HOME)"; else bad "нет $KEYCLOAK_HOME/bin/kc.sh"; fi
-    if [ -f "$KEYCLOAK_HOME/data/import/realm-node.json" ]; then
-        ok "файл импорта realm на месте"
-    else
-        bad "нет $KEYCLOAK_HOME/data/import/realm-node.json"
-    fi
-    jbin="$(command -v java 2>/dev/null || true)"
-    if [ -z "$jbin" ] && [ -n "${JAVA_HOME:-}" ] && [ -x "$JAVA_HOME/bin/java" ]; then jbin="$JAVA_HOME/bin/java"; fi
-    if [ -z "$jbin" ] && [ -x /opt/keycloak-jre/bin/java ]; then jbin=/opt/keycloak-jre/bin/java; fi
-    if [ -n "$jbin" ]; then
-        jv="$("$jbin" -version 2>&1 | head -1)"
-        case "$jv" in
-            *\"1[7-9]*|*\"2[0-9]*) ok "Java: $jv" ;;
-            *) bad "Java: $jv — Keycloak 26 требует 17+" ;;
-        esac
-    else
-        bad "java не найдена (ни в PATH, ни в \$JAVA_HOME, ни в /opt/keycloak-jre)"
-    fi
-    # Realm отвечает и содержит правильное имя.
-    if command -v curl >/dev/null 2>&1; then
-        realm_json="$(curl -sf --max-time 10 "http://127.0.0.1:$KEYCLOAK_HTTP_PORT$KEYCLOAK_RELATIVE_PATH/realms/$KC_REALM" 2>/dev/null || true)"
-        if [ -n "$realm_json" ]; then
-            case "$realm_json" in
-                *"\"realm\":\"$KC_REALM\""*) ok "realm $KC_REALM отвечает" ;;
-                *) bad "realm отвечает, но имя не совпадает: $realm_json" ;;
-            esac
-        else
-            bad "realm $KC_REALM не отвечает (http://127.0.0.1:$KEYCLOAK_HTTP_PORT$KEYCLOAK_RELATIVE_PATH/realms/$KC_REALM)"
-        fi
-        # LDAP-федерация видна только в admin API (в публичном /realms/<r> её нет).
-        kc_token="$(curl -sf --max-time 10 \
-            -d "client_id=admin-cli" -d "username=$KEYCLOAK_ADMIN_USER" \
-            --data-urlencode "password=$KEYCLOAK_ADMIN_PASSWORD" -d "grant_type=password" \
-            "http://127.0.0.1:$KEYCLOAK_HTTP_PORT$KEYCLOAK_RELATIVE_PATH/realms/master/protocol/openid-connect/token" \
-            2>/dev/null | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')"
-        if [ -n "$kc_token" ]; then
-            comps="$(curl -sf --max-time 10 -H "Authorization: Bearer $kc_token" \
-                "http://127.0.0.1:$KEYCLOAK_HTTP_PORT$KEYCLOAK_RELATIVE_PATH/admin/realms/$KC_REALM/components?type=org.keycloak.storage.UserStorageProvider" \
-                2>/dev/null || true)"
-            if printf '%s' "$comps" | grep -q "ldap://$LDAP_HOST:389"; then
-                ok "LDAP-федерация настроена на ldap://$LDAP_HOST:389"
-            else
-                bad "в realm нет LDAP-федерации на ldap://$LDAP_HOST:389"
-            fi
-        elif grep -q "ldap://$LDAP_HOST:389" "$KEYCLOAK_HOME/data/import/realm-node.json" 2>/dev/null; then
-            ok "LDAP-федерация в импорте realm: ldap://$LDAP_HOST:389 (admin API недоступен)"
-        else
-            bad "в realm нет LDAP-федерации на ldap://$LDAP_HOST:389"
-        fi
-        # OIDC-эндпоинты живы.
-        if curl -sf --max-time 10 -o /dev/null \
-            "http://127.0.0.1:$KEYCLOAK_HTTP_PORT$KEYCLOAK_RELATIVE_PATH/realms/$KC_REALM/.well-known/openid-configuration"; then
-            ok "OIDC discovery-эндпоинт отвечает"
-        else
-            bad "OIDC discovery-эндпоинт не отвечает"
-        fi
-    else
-        bad "curl не установлен — проверки realm пропущены"
-    fi
 fi
 
 echo

@@ -43,7 +43,6 @@
   127.0.0.2  ldap-a.lab.test
   127.0.0.3  kdc-a1.lab.test
   127.0.0.4  kdc-a2.lab.test
-  127.0.0.5  keycloak-a.lab.test
   ```
 
   Скрипт сам переписывает управляемый блок в `/etc/hosts` (маркеры
@@ -199,9 +198,6 @@ sudo ./scripts/astra-node-a-verify.sh        # проверить
      от осиротевших экземпляров).
  11. **Наполнение каталога**: `seed.ldif.tpl` + записи `uid=orgNuserM`
      (ветку задаёт префикс логина) и `uid=admin,ou=admins`.
- 12. **Keycloak** (если не указан `--skip-keycloak`): Java 17, дистрибутив из
-     `vendor/`, пользователь `keycloak`, юнит `keycloak.service`, realm
-     `lab-a` с LDAP-федерацией на наш slapd — см. раздел 3.
 
 ### 2.2 Маппинг принципалов → ветки каталога
 
@@ -222,93 +218,7 @@ sasl-regexp uid=([^,]+),cn=gssapi,cn=auth        uid=$1,ou=org1,ou=people,dc=lab
 
 ---
 
-## 3. Keycloak (нативно, без Docker)
-
-Та же версия и тот же realm, что в лаборатории: **Keycloak 26.8.1**, realm
-`lab-a`, LDAP-федерация на наш slapd (`ou=people`), клиент `portal`,
-`allowKerberosAuthentication=false` (вход только через web-форму, как в
-лаборатории — «уровень 2»).
-
-### 3.1 Офлайн-поставка
-
-Интернета на узле нет, поэтому дистрибутивы лежат в каталоге `vendor/`
-(в git не коммитятся — 200 МБ):
-
-| Файл | Назначение |
-|---|---|
-| `vendor/keycloak-26.8.1.tar.gz` | сам Keycloak |
-| `vendor/temurin17-jre-x64-linux.tar.gz` | фолбэк-JRE, если в репозиториях Astra нет `openjdk-17` |
-
-Скопируйте на узел **вместе** со `scripts/` и `deploy/`:
-
-```bash
-scp -r scripts deploy vendor astra:/opt/reberos/
-```
-
-Порядок выбора источника:
-
-1. **Java**: сначала `openjdk-17` из репозиториев Astra (`JAVA_PACKAGE` в env);
-   если пакета нет — офлайн-JRE из `vendor/temurin17-jre-x64-linux.tar.gz`
-   (распаковывается в `/opt/keycloak-jre`). Keycloak 26 требует **Java 17+**,
-   на Java 11 он не стартует.
-2. **Keycloak**: только `vendor/keycloak-26.8.1.tar.gz` (`KEYCLOAK_TARBALL` в env).
-   Если файла нет — скрипт завершится с понятным сообщением.
-
-### 3.2 Что появляется на узле
-
-| Что | Где |
-|---|---|
-| Дистрибутив | `/opt/keycloak` → `/opt/keycloak-26.8.1` |
-| Пользователь | `keycloak` (system, без шелла) |
-| Параметры | `/etc/keycloak/keycloak.env` (права `0640`) |
-| Данные (БД dev-file) | `/opt/keycloak/data` |
-| Realm для импорта | `/opt/keycloak/data/import/realm-node.json` |
-| Юнит | `/etc/systemd/system/keycloak.service` |
-| HTTP | `http://<узел>:8080/auth/` (realm: `/auth/realms/lab-a`) |
-
-Ключевые параметры в `/etc/keycloak/keycloak.env` (сгенерированы скриптом):
-
-```
-KC_BOOTSTRAP_ADMIN_USERNAME=admin
-KC_BOOTSTRAP_ADMIN_PASSWORD="..."
-KC_HTTP_HOST=0.0.0.0            # Keycloak 26 в dev-режиме иначе слушает только localhost
-KC_HTTP_PORT=8080
-KC_HTTP_RELATIVE_PATH=/auth      # как в лаборатории: Keycloak живёт под /auth
-KC_HOSTNAME_STRICT=false
-KC_HEALTH_ENABLED=true
-KC_METRICS_ENABLED=true
-KC_DB=dev-file
-```
-
-Админ входа: `KEYCLOAK_ADMIN_USER` / `KEYCLOAK_ADMIN_PASSWORD` (в env-файле
-`deploy/astra-node-a.env`, права 600).
-
-### 3.3 Запуск и проверка
-
-```bash
-sudo systemctl status keycloak
-curl -s http://127.0.0.1:8080/auth/realms/lab-a | head -c 200
-sudo ./scripts/astra-node-a-verify.sh      # есть блок «Keycloak»
-```
-
-Первый старт занимает 20–40 с (импорт realm'а). Скрипт ждёт готовности
-(`KEYCLOAK_START_TIMEOUT`, по умолчанию 120 с) и при неудаче показывает
-`journalctl -u keycloak -n 50`.
-
-### 3.4 Тонкости
-
-* **`start-dev`** — режим разработки (как в лаборатории: в контейнере тоже
-  `start-dev`). Для промышленной эксплуатации нужен `kc.sh start` +
-  HTTPS + внешняя БД (PostgreSQL) — это уже за рамками узла.
-* **БД `dev-file`** — данные в `$KC_HOME/data`; удаляются вместе с Keycloak.
-* **LDAP-федерация** требует, чтобы наш `slapd` был поднят и отвечал на
-  389 — поэтому юнит `keycloak.service` объявлен `After=slapd-lab.service`.
-* Если Java 17 недоступна и нет оффлайн-JRE — установка Keycloak не пройдёт;
-  либо поставьте `openjdk-17` из репозитория Astra, либо положите JRE в `vendor/`.
-
----
-
-## 4. Проверка
+## 3. Проверка
 
 ```bash
 sudo ./scripts/astra-node-a-verify.sh
@@ -343,7 +253,7 @@ kvno ldap/ldap-a.lab.test
 klist -k /etc/krb5.keytab
 ```
 
-### 4.1 Если проверки не проходят
+### 3.1 Если проверки не проходят
 
 | Симптом | Причина | Что делать |
 |---|---|---|
@@ -352,8 +262,6 @@ klist -k /etc/krb5.keytab
 | `порт 389 всё ещё занят — остановите владельца` | на 389 слушает не slapd (например, 389-ds) | скрипт чужое не убивает: определите PID из вывода и остановите вручную |
 | `restart counter is at N` + `bind(7) errno=98` | unit без `-d 0`: slapd демонизируется, systemd убивает форк, осиротевшие экземпляры держат порт | просто перезапустите скрипт — он перепишет unit с `-d 0`, сделает `reset-failed` и убьёт свои осиротевшие процессы |
 | `Current command vanished from the unit file` | unit переписан при активном цикле рестартов | скрипт делает `systemctl stop` + `reset-failed` перед стартом; повторный запуск чинит |
-| `AccessDeniedException: .../lib/quarkus/transformed-bytecode.jar` | `/opt/keycloak-*` принадлежит root, а kc.sh пишет при старте (сборка Quarkus) от `keycloak` | скрипт делает `chown -R keycloak:keycloak /opt/keycloak-<ver>` и перезапускает юнит; достаточно повторить запуск |
-| `chown: невозможно получить доступ к '/var/lib/keycloak'` | `useradd --home-dir` не создаёт каталог | скрипт создаёт его через `install -d -o keycloak -g keycloak`; повторите запуск |
 | `kinit ... Preauthentication failed` | принципал уже был создан с другим паролем (env поменялся) | `sudo ./scripts/astra-node-a.sh --sync-passwords` |
 | GSSAPI в LDAP не проходит, в журнале `Server ldap/<hostname>@realm not found in Kerberos database` | имена сервисов в `/etc/hosts` привязаны к `127.0.0.1`, обратный резолв даёт `localhost`, Cyrus SASL подставляет имя машины | перезапустите скрипт: он перепишет `/etc/hosts` на `127.0.0.2+` (проверка у verify — «Имена и окружение»); вручную: `getent hosts ldap-a.lab.test` не должен давать `127.0.0.1` |
 | GSSAPI в LDAP не проходит, в выводе `Invalid credentials (49)` | `sasl-regexp` не совпал с authc-DN | verify печатает вывод `ldapwhoami` и журнал `slapd-lab` — смотрите их |
@@ -367,14 +275,10 @@ klist -k /etc/krb5.keytab
 | `Cannot find KDC for realm` | нет имени KDC в `/etc/hosts`/DNS | `getent hosts kdc-a1.lab.test` |
 | `GSSAPI: No credentials were supplied` | не сделан `kinit` или ccache не тот | `klist` / `KRB5CCNAME=FILE:/tmp/krb5cc_0` |
 | cross-realm не проходит | разошлись kvno кросс-реалмовых ключей | перезапустить `scripts/astra-node-a.sh` (пересоздаст пару) |
-| `Keycloak 26 requires Java 17+` / `Unsupported Java version` | в системе только Java 11 | поставьте `openjdk-17` из репозитория Astra или положите `vendor/temurin17-jre-x64-linux.tar.gz` |
-| `нет дистрибутива Keycloak: vendor/keycloak-26.8.1.tar.gz` | на узле нет интернета и файла нет | скопируйте tarball в `vendor/` на узле |
-| Keycloak не отвечает на 8080 | не успел подняться или упал | `journalctl -u keycloak -n 50`; проверьте, что `slapd-lab.service` активен (федерация) |
-| `Realm 'lab-a' imported` нет в логе | realm не импортирован | проверьте `/opt/keycloak/data/import/realm-node.json` и перезапустите `systemctl restart keycloak` |
 
 ---
 
-## 5. Клиент на локальном ПК
+## 4. Клиент на локальном ПК
 
 `scripts/astra-node-a-client.sh` настраивает **клиент** (ноутбук/ПК), а не
 узел: прописывает имена в `/etc/hosts`, пишет `/etc/krb5.conf` с обоими
@@ -393,7 +297,7 @@ sudo ./scripts/astra-node-a-client.sh --uninstall         # откат
 Что делает:
 
 1. `/etc/hosts` — управляемый блок `# BEGIN/END reberos astra-client`:
-   `172.16.138.25 ldap-a.lab.test kdc-a1.lab.test kdc-a2.lab.test keycloak-a.lab.test`
+   `172.16.138.25 ldap-a.lab.test kdc-a1.lab.test kdc-a2.lab.test`
    (имя узла — из `--server` или `NODE_IP` в `deploy/astra-node-a.env`).
 2. `/etc/krb5.conf` — с бэкапом `krb5.conf.reberos-backup-<дата>`:
    `default_realm=ORG1.TEST`, `rdns=false`, `dns_canonicalize_hostname=false`,
@@ -401,7 +305,6 @@ sudo ./scripts/astra-node-a-client.sh --uninstall         # откат
 3. Сквозная проверка: `alice@ORG1.TEST` (LDAP → `ou=org1`), затем
    `org2user1@ORG2.TEST` (кросс-реалм → `ou=org2`). Пароли берутся из
    env-файла, иначе `kinit` спросит интерактивно.
-4. Печатает URL Keycloak (`http://keycloak-a.lab.test:8080/auth`).
 
 `--uninstall` убирает блок из `/etc/hosts` и возвращает прежний
 `/etc/krb5.conf` из бэкапа (если бэкапа нет — переименовывает сгенерированный
@@ -416,23 +319,22 @@ sudo ./scripts/astra-node-a-client.sh --uninstall         # откат
 | `Server ldap/...@ORG1.TEST not found` | не настроен кросс-реалм | перезапустите на узле `./scripts/astra-node-a.sh --only kdc` (создаст оба `krbtgt`-имени в обеих БД) |
 | `No key table entry found matching ldap/<hostname>` | у slapd нет `sasl-host` | на узле в `/etc/ldap/slapd.conf` нужна строка `sasl-host ldap-a.lab.test` |
 | `Preauthentication failed` | пароль в env не совпадает с БД | на узле `./scripts/astra-node-a.sh --sync-passwords --only kdc` |
-| Keycloak 404 | пропущен контекст `/auth` | `http://keycloak-a.lab.test:8080/auth` |
 
 ---
 
-## 6. Удаление (откат)
+## 5. Удаление (откат)
 
 ```bash
 sudo ./scripts/astra-node-a-remove.sh --dry-run   # посмотреть план
 sudo ./scripts/astra-node-a-remove.sh             # с подтверждением
 ```
 
-Скрипт останавливает и отключает сервисы, удаляет unit `slapd-lab.service`
-и `keycloak.service`, keytab, `/etc/krb5.conf`, `kdc.conf`, `kadm5*.acl`,
-stash'и, `slapd.conf`, **обе базы KDC и данные каталога**, а также Keycloak
-(`/opt/keycloak*`, `/var/lib/keycloak`, `/etc/keycloak`, пользователь
-`keycloak`). Перед удалением конфиги копируются в
-`/root/astra-node-a-backup-<дата>`.
+Скрипт останавливает и отключает сервисы, удаляет unit `slapd-lab.service`,
+keytab, `/etc/krb5.conf`, `kdc.conf`, `kadm5*.acl`, stash'и, `slapd.conf`,
+**обе базы KDC и данные каталога**. Заодно вычищаются остатки Keycloak от
+прежних версий установщика (`/opt/keycloak*`, `/var/lib/keycloak`,
+`/etc/keycloak`, пользователь `keycloak`). Перед удалением конфиги копируются
+в `/root/astra-node-a-backup-<дата>`.
 
 Флаги:
 
@@ -452,7 +354,7 @@ stash'и, `slapd.conf`, **обе базы KDC и данные каталога**
 
 ---
 
-## 7. Отличия от лаборатории (Docker)
+## 6. Отличия от лаборатории (Docker)
 
 | | Лаборатория | Нативный узел |
 |---|---|---|
@@ -461,7 +363,5 @@ stash'и, `slapd.conf`, **обе базы KDC и данные каталога**
 | Каталог | контейнер `ldap-a`, `slapd -f` | тот же конфиг, `slapd-lab.service` |
 | keytab | `KV5_KTNAME` в контейнере | `KRB5_KTNAME` в unit-файле |
 | Правила каталога | `authz-regexp` (OpenLDAP 2.5) | `sasl-regexp` (OpenLDAP 2.4) |
-| Apache | есть (SPNEGO) | нет (в объёме узла только Kerberos + LDAP + Keycloak) |
-| Keycloak | контейнер `keycloak-a`, образ `quay.io/keycloak:26.8.1` | нативный `keycloak.service`, тот же 26.8.1 из `vendor/` |
-| Порт Keycloak | `127.0.0.1:8091` → 8080 внутри контейнера | `8080` напрямую, базовый путь `/auth` |
-| Realm Keycloak | `lab-a` (импорт из шаблона) | `lab-a` (тот же шаблон, `scripts/templates/realm-node.json.tpl`) |
+| Apache | есть (SPNEGO) | нет |
+| Keycloak | контейнер `keycloak-a` | нет (в объёме узла только Kerberos + LDAP) |

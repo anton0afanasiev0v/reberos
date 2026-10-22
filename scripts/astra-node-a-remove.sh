@@ -48,6 +48,15 @@ done
 [ -f "$ENV_FILE" ] || { echo "НЕТ ФАЙЛА ПАРАМЕТРОВ: $ENV_FILE" >&2; exit 1; }
 set -a; . "$ENV_FILE"; set +a
 
+# Keycloak из нативного узла убран; значения ниже нужны только чтобы
+# вычистить остатки от прежних установок.
+KEYCLOAK_HOME="${KEYCLOAK_HOME:-/opt/keycloak}"
+KEYCLOAK_DATA_DIR="${KEYCLOAK_DATA_DIR:-/var/lib/keycloak}"
+KEYCLOAK_ETC_DIR="${KEYCLOAK_ETC_DIR:-/etc/keycloak}"
+KEYCLOAK_USER="${KEYCLOAK_USER:-keycloak}"
+KEYCLOAK_UNIT="${KEYCLOAK_UNIT:-keycloak.service}"
+KEYCLOAK_VERSION="${KEYCLOAK_VERSION:-}"
+
 log()  { echo "[astra-node-a-remove] $*"; }
 warn() { echo "[astra-node-a-remove] ВНИМАНИЕ: $*" >&2; }
 die()  { echo "[astra-node-a-remove] ОШИБКА: $*" >&2; exit 1; }
@@ -192,7 +201,9 @@ if [ -L "$KEYCLOAK_HOME" ]; then
     run "rm -f '$KEYCLOAK_HOME'"
 fi
 remove_path "$KEYCLOAK_HOME" "каталог Keycloak"
-remove_path "$KEYCLOAK_HOME-$KEYCLOAK_VERSION" "каталог Keycloak $KEYCLOAK_VERSION"
+if [ -n "$KEYCLOAK_VERSION" ]; then
+    remove_path "$KEYCLOAK_HOME-$KEYCLOAK_VERSION" "каталог Keycloak $KEYCLOAK_VERSION"
+fi
 if id "$KEYCLOAK_USER" >/dev/null 2>&1; then
     log "  удаляю пользователя $KEYCLOAK_USER"
     run "userdel $KEYCLOAK_USER || true"

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Настройка ЛОКАЛЬНОГО ПК как клиента лабораторного «Узла А» (Astra, нативно):
-#   - имена ldap-a / kdc-a1 / kdc-a2 / keycloak-a -> IP узла в /etc/hosts;
+#   - имена ldap-a / kdc-a1 / kdc-a2 -> IP узла в /etc/hosts;
 #   - /etc/krb5.conf с двумя realm'ами (ORG1.TEST / ORG2.TEST) и кросс-доверием;
 #   - проверка: kinit -> kvno -> ldapwhoami (GSSAPI), плюс кросс-реалм.
 #
@@ -55,8 +55,6 @@ REALM_B="${REALM_B:-ORG2.TEST}"
 KDC_A_HOST="${KDC_A_HOST:-kdc-a1.$DOMAIN}"
 KDC_B_HOST="${KDC_B_HOST:-kdc-a2.$DOMAIN}"
 LDAP_HOST="${LDAP_HOST:-ldap-a.$DOMAIN}"
-KEYCLOAK_HOST="${KEYCLOAK_HOST:-keycloak-a.$DOMAIN}"
-KEYCLOAK_HTTP_PORT="${KEYCLOAK_HTTP_PORT:-8080}"
 LDAP_SPN="${LDAP_SPN:-ldap/$LDAP_HOST}"
 KRB5_CONF="${KRB5_CONF:-/etc/krb5.conf}"
 SERVER_IP="${SERVER_IP:-${NODE_IP:-}}"
@@ -64,7 +62,7 @@ SERVER_IP="${SERVER_IP:-${NODE_IP:-}}"
 HOSTS_FILE=/etc/hosts
 HOSTS_BEGIN="# BEGIN reberos astra-client"
 HOSTS_END="# END reberos astra-client"
-HOSTS_LABELS="$LDAP_HOST $KDC_A_HOST $KDC_B_HOST $KEYCLOAK_HOST"
+HOSTS_LABELS="$LDAP_HOST $KDC_A_HOST $KDC_B_HOST"
 MARK="# Сгенерировано scripts/astra-node-a-client.sh"
 
 log()  { echo "[astra-client] $*"; }
@@ -248,11 +246,10 @@ check_ports() {
     echo
     echo "==> Доступность узла $SERVER_IP"
     local p name
-    for p in 88 389 "$KEYCLOAK_HTTP_PORT"; do
+    for p in 88 389; do
         case "$p" in
             88)  name="KDC/TCP" ;;
             389) name="LDAP/TCP" ;;
-            *)   name="Keycloak/HTTP" ;;
         esac
         if tcp_open "$SERVER_IP" "$p"; then
             ok "$name: $SERVER_IP:$p"
@@ -400,8 +397,6 @@ main() {
     echo "  klist"
     echo "  ldapwhoami -Y GSSAPI -H ldap://$LDAP_HOST"
     echo "  kinit org2user1@$REALM_B      # кросс-реалм (пароль Org2User1_2024)"
-    echo "  Keycloak: http://$KEYCLOAK_HOST:$KEYCLOAK_HTTP_PORT/auth"
-    echo "            http://$SERVER_IP:$KEYCLOAK_HTTP_PORT/auth"
     [ "$FAIL" = "0" ] || return 1
 }
 

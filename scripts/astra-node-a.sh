@@ -6,8 +6,6 @@
 #   - OpenLDAP: GSSAPI-аутентификация + изоляция организаций
 #     (sasl-regexp/authz-regexp по realm + ACL по ou=orgN);
 #   - служебный принципал ldap/<host> и keytab для slapd;
-#   - Keycloak (нативно, без Docker): Java + дистрибутив из vendor/, realm с
-#     LDAP-федерацией на наш slapd, systemd-юнит.
 #
 # Идемпотентно: повторный запуск ничего не ломает; существующие БД, принципалы
 # и записи каталога не пересоздаются.
@@ -15,17 +13,14 @@
 #   sudo ./scripts/astra-node-a.sh                          # всё
 #   sudo ./scripts/astra-node-a.sh --only kdc               # только KDC
 #   sudo ./scripts/astra-node-a.sh --only ldap              # только каталог
-#   sudo ./scripts/astra-node-a.sh --only keycloak          # только Keycloak
 #   sudo ./scripts/astra-node-a.sh --dry-run                # печать, без изменений
 #   sudo ./scripts/astra-node-a.sh --force                  # разрешить не-Astra
 #   sudo ./scripts/astra-node-a.sh --switch-base-level      # astra-modeswitch set 0 (нужна перезагрузка)
 #   sudo ./scripts/astra-node-a.sh --check-templates        # сверка шаблонов (ldap/ vs scripts/templates/)
-#   sudo ./scripts/astra-node-a.sh --skip-keycloak          # без Keycloak
 #   sudo ./scripts/astra-node-a.sh --no-hosts               # не править /etc/hosts
 #   sudo ./scripts/astra-node-a.sh --sync-passwords         # выставить пароли по env-файлу
 #
-# На узле достаточно scripts/ + deploy/ + vendor/: шаблоны лежат в scripts/templates/,
-# дистрибутивы Keycloak/JRE — в vendor/ (интернета на узле нет).
+# На узле достаточно scripts/ + deploy/: шаблоны лежат в scripts/templates/.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -39,12 +34,29 @@ SKIP_PACKAGES=0
 REWRITE_KEYTAB=0
 SWITCH_BASE=0
 CHECK_TEMPLATES=0
-SKIP_KEYCLOAK=0
 NO_HOSTS=0
 SYNC_PASSWORDS=0
 
 usage() {
-    sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'
+    cat <<'USAGE'
+Нативная настройка «Узла А» на Astra Linux SE 1.7 (БЕЗ Docker):
+  - MIT Kerberos: два realm'а (две организации) в одном процессе krb5kdc,
+    у каждого realm своя БД, свой stash и свой kadm5.acl;
+  - кросс-реалмовое доверие между realm'ами (общий ключ в обе стороны);
+  - OpenLDAP: GSSAPI-аутентификация + изоляция организаций
+    (sasl-regexp/authz-regexp по realm + ACL по ou=orgN);
+  - служебный принципал ldap/<host> и keytab для slapd.
+
+  sudo ./scripts/astra-node-a.sh                          # всё
+  sudo ./scripts/astra-node-a.sh --only kdc               # только KDC
+  sudo ./scripts/astra-node-a.sh --only ldap              # только каталог
+  sudo ./scripts/astra-node-a.sh --dry-run                # печать, без изменений
+  sudo ./scripts/astra-node-a.sh --force                  # разрешить не-Astra
+  sudo ./scripts/astra-node-a.sh --switch-base-level      # astra-modeswitch set 0 (нужна перезагрузка)
+  sudo ./scripts/astra-node-a.sh --check-templates        # сверка шаблонов (ldap/ vs scripts/templates/)
+  sudo ./scripts/astra-node-a.sh --no-hosts               # не править /etc/hosts
+  sudo ./scripts/astra-node-a.sh --sync-passwords         # выставить пароли по env-файлу
+USAGE
     exit "${1:-0}"
 }
 
@@ -58,7 +70,6 @@ while [ $# -gt 0 ]; do
         --rewrite-keytab)   REWRITE_KEYTAB=1; shift ;;
         --switch-base-level) SWITCH_BASE=1; shift ;;
         --check-templates)  CHECK_TEMPLATES=1; shift ;;
-        --skip-keycloak)    SKIP_KEYCLOAK=1; shift ;;
         --no-hosts)         NO_HOSTS=1; shift ;;
         --sync-passwords)   SYNC_PASSWORDS=1; shift ;;
         -h|--help)          usage 0 ;;
@@ -115,11 +126,8 @@ tpl_file() {
 check_templates() {
     # Сверяем встроенные копии с шаблонами лаборатории (если репозиторий рядом).
     local rc=0 name a b
-    for name in slapd.conf.tpl seed.ldif.tpl realm-node.json.tpl; do
-        case "$name" in
-            realm-node.json.tpl) a="$SCRIPT_DIR/../keycloak/$name" ;;
-            *)                  a="$SCRIPT_DIR/../ldap/$name" ;;
-        esac
+    for name in slapd.conf.tpl seed.ldif.tpl; do
+        a="$SCRIPT_DIR/../ldap/$name"
         b="$SCRIPT_DIR/templates/$name"
         if [ ! -f "$a" ]; then
             echo "  $name: шаблона лаборатории нет — сверка пропущена"
@@ -851,9 +859,6 @@ hosts_block() {
     echo "127.0.0.2  $LDAP_HOST"
     echo "127.0.0.3  $KDC_A_HOST"
     echo "127.0.0.4  $KDC_B_HOST"
-    if [ "$SKIP_KEYCLOAK" != "1" ] && [ -n "${KEYCLOAK_HOST:-}" ]; then
-        echo "127.0.0.5  $KEYCLOAK_HOST"
-    fi
     echo "# END reberos astra-node-a"
 }
 
@@ -1048,266 +1053,6 @@ enable_services() {
     log "slapd ($SLAPD_UNIT) слушает 389 с нашим конфигом ✓"
 }
 
-# ============================== Keycloak ==============================
-# Нативная установка (без Docker): Java + дистрибутив из vendor/ + realm
-# с LDAP-федерацией на наш slapd + systemd-юнит.
-# На узле интернета нет, поэтому дистрибутивы берём из vendor/.
-
-repo_path() {
-    # repo_path <путь> — абсолютный путь (относительный — от корня репозитория)
-    local p="$1"
-    case "$p" in
-        /*) printf '%s' "$p" ;;
-        *)  printf '%s/%s' "$REPO_ROOT" "$p" ;;
-    esac
-}
-
-java_major_version() {
-    # java_major_version <путь к java> — мажорная версия или пусто
-    local j="$1" v
-    [ -x "$j" ] || return 0
-    v="$("$j" -version 2>&1 | head -1 | sed -E 's/.*version "([0-9]+).*/\1/')"
-    printf '%s' "$v"
-}
-
-find_java_home() {
-    # Ищем JAVA_HOME: сначала системный openjdk-17/21, потом JRE из vendor/
-    local jh
-    for jh in /usr/lib/jvm/java-17-openjdk-* /usr/lib/jvm/java-21-openjdk-* \
-              /usr/lib/jvm/default-java /opt/keycloak-jre; do
-        if [ -x "$jh/bin/java" ]; then printf '%s' "$jh"; return 0; fi
-    done
-    return 1
-}
-
-install_java() {
-    # Keycloak 26 требует Java 17+. Сначала пробуем репозиторий Astra,
-    # затем (если пакета нет) — офлайн-JRE из vendor/.
-    local have major
-    have="$(find_java_home)" || have=""
-    if [ -n "$have" ]; then
-        major="$(java_major_version "$have/bin/java")"
-        if [ "${major:-0}" -ge 17 ] 2>/dev/null; then
-            log "Java уже есть: $have (версия $major)"
-            JAVA_HOME="$have"
-            return 0
-        fi
-        warn "найдена Java $major в $have — Keycloak 26 требует 17+"
-    fi
-
-    log "ставлю Java 17 ($JAVA_PACKAGE)"
-    if apt_install_one "$JAVA_PACKAGE"; then
-        have="$(find_java_home)" || have=""
-        if [ -n "$have" ]; then JAVA_HOME="$have"; log "  JAVA_HOME=$JAVA_HOME"; return 0; fi
-    fi
-
-    # Фолбэк: офлайн-JRE в vendor/
-    local tarball
-    tarball="$(repo_path "$JAVA_TARBALL")"
-    if [ -f "$tarball" ]; then
-        log "пакета $JAVA_PACKAGE нет — беру JRE из $JAVA_TARBALL"
-        if [ "$DRY_RUN" = "1" ]; then
-            echo "    tar xzf $tarball -C /opt && ln -sfn /opt/$(basename "$tarball" .tar.gz | sed 's/-jre$//') /opt/keycloak-jre"
-            return 0
-        fi
-        mkdir -p /opt
-        tar xzf "$tarball" -C /opt
-        local d
-        d="$(find /opt -maxdepth 1 -type d -name 'jdk-17*' | head -1)"
-        [ -n "$d" ] || die "в $tarball не нашёл каталог jdk-17*"
-        rm -rf /opt/keycloak-jre
-        ln -sfn "$d" /opt/keycloak-jre
-        JAVA_HOME=/opt/keycloak-jre
-        log "  JAVA_HOME=$JAVA_HOME (оффлайн JRE)"
-        return 0
-    fi
-    die "нет Java 17: пакет $JAVA_PACKAGE не устанавливается и нет офлайн-JRE $JAVA_TARBALL (положите temurin17-jre-x64-linux.tar.gz в vendor/)"
-}
-
-install_keycloak_dist() {
-    # Дистрибутив Keycloak — только из vendor/ (на узле нет интернета).
-    local tarball dir version_dir
-    tarball="$(repo_path "$KEYCLOAK_TARBALL")"
-    version_dir="$KEYCLOAK_HOME"
-    [ -n "$KEYCLOAK_VERSION" ] && version_dir="$KEYCLOAK_HOME-$KEYCLOAK_VERSION"
-
-    if [ -x "$KEYCLOAK_HOME/bin/kc.sh" ]; then
-        log "Keycloak уже установлен: $KEYCLOAK_HOME"
-        return 0
-    fi
-    if [ ! -f "$tarball" ]; then
-        die "нет дистрибутива Keycloak: $tarball (интернет на узле нет — положите keycloak-$KEYCLOAK_VERSION.tar.gz в vendor/)"
-    fi
-    log "распаковываю Keycloak $KEYCLOAK_VERSION из $tarball"
-    if [ "$DRY_RUN" = "1" ]; then
-        echo "    tar xzf $tarball -C /opt && ln -sfn $version_dir $KEYCLOAK_HOME"
-        return 0
-    fi
-    mkdir -p /opt
-    rm -rf "$version_dir"
-    tar xzf "$tarball" -C /opt
-    [ -x "$version_dir/bin/kc.sh" ] || die "в $tarball нет keycloak-$KEYCLOAK_VERSION/bin/kc.sh"
-    ln -sfn "$version_dir" "$KEYCLOAK_HOME"
-    log "  $KEYCLOAK_HOME -> $version_dir"
-}
-
-fix_keycloak_ownership() {
-    # kc.sh пишет в lib/quarkus и data/, а HOME=$KEYCLOAK_DATA_DIR может ещё не
-    # существовать (useradd --home-dir его не создаёт). Иначе — AccessDenied на
-    # transformed-bytecode.jar или отказ на $HOME.
-    local ver_dir="$KEYCLOAK_HOME"
-    [ -n "$KEYCLOAK_VERSION" ] && ver_dir="$KEYCLOAK_HOME-$KEYCLOAK_VERSION"
-    run "install -d -m 0750 -o $KEYCLOAK_USER -g $KEYCLOAK_GROUP $KEYCLOAK_DATA_DIR"
-    run "mkdir -p $KEYCLOAK_HOME/data && chown -R $KEYCLOAK_USER:$KEYCLOAK_GROUP $KEYCLOAK_HOME/data"
-    run "chown -R $KEYCLOAK_USER:$KEYCLOAK_GROUP $ver_dir"
-}
-
-create_keycloak_user() {
-    if id "$KEYCLOAK_USER" >/dev/null 2>&1; then
-        log "пользователь $KEYCLOAK_USER уже есть"
-        run "install -d -m 0750 -o $KEYCLOAK_USER -g $KEYCLOAK_GROUP $KEYCLOAK_DATA_DIR"
-        return 0
-    fi
-    log "создаю системного пользователя $KEYCLOAK_USER"
-    run "useradd --system --home-dir $KEYCLOAK_DATA_DIR --shell /usr/sbin/nologin $KEYCLOAK_USER"
-    run "install -d -m 0750 -o $KEYCLOAK_USER -g $KEYCLOAK_GROUP $KEYCLOAK_DATA_DIR"
-}
-
-write_keycloak_env() {
-    log "пишу $KEYCLOAK_ETC_DIR/keycloak.env"
-    [ "$DRY_RUN" = "1" ] && return 0
-    mkdir -p "$KEYCLOAK_ETC_DIR"
-    cat > "$KEYCLOAK_ETC_DIR/keycloak.env" <<EOF
-# Сгенерировано scripts/astra-node-a.sh (нативный Узел А, Astra Linux 1.7).
-# Параметры Keycloak ${KEYCLOAK_VERSION} — как в Docker-лаборатории.
-KC_BOOTSTRAP_ADMIN_USERNAME=$KEYCLOAK_ADMIN_USER
-KC_BOOTSTRAP_ADMIN_PASSWORD="$KEYCLOAK_ADMIN_PASSWORD"
-KC_HTTP_ENABLED=true
-# Keycloak 26 в dev-режиме по умолчанию слушает только localhost — для
-# доступа с других ПК (браузер, Keycloak UI) нужен явный 0.0.0.0.
-KC_HTTP_HOST=0.0.0.0
-KC_HTTP_PORT=$KEYCLOAK_HTTP_PORT
-KC_HTTP_RELATIVE_PATH=$KEYCLOAK_RELATIVE_PATH
-KC_HOSTNAME_STRICT=false
-KC_HEALTH_ENABLED=true
-KC_METRICS_ENABLED=true
-KC_METRICS_PORT=9000
-KC_DB=dev-file
-KC_HOME=$KEYCLOAK_HOME
-JAVA_HOME=$JAVA_HOME
-EOF
-    chmod 0640 "$KEYCLOAK_ETC_DIR/keycloak.env"
-    chown root:"$KEYCLOAK_GROUP" "$KEYCLOAK_ETC_DIR/keycloak.env" 2>/dev/null || true
-}
-
-write_keycloak_realm() {
-    # Realm импортируется при старте из $KC_HOME/data/import/realm-node.json
-    local tpl import_dir out
-    tpl="$(tpl_file realm-node.json.tpl)" || die "не найден шаблон realm-node.json.tpl (ищем keycloak/ и scripts/templates/)"
-    import_dir="$KEYCLOAK_HOME/data/import"
-    out="$import_dir/realm-node.json"
-    log "готовлю realm $KC_REALM ($out)"
-    [ "$DRY_RUN" = "1" ] && return 0
-    mkdir -p "$import_dir"
-    sed -e "s|\${KC_REALM}|$KC_REALM|g" \
-        -e "s|\${NODE_LABEL}|$KEYCLOAK_NODE_LABEL|g" \
-        -e "s|\${DOMAIN}|$DOMAIN|g" \
-        -e "s|\${WEB_HOST}|$WEB_HOST|g" \
-        -e "s|\${PUBLIC_WEB_BASE}|$PUBLIC_WEB_BASE|g" \
-        -e "s|\${LDAP_HOST}|$LDAP_HOST|g" \
-        -e "s|\${LDAP_ADMIN_PASSWORD}|$LDAP_ADMIN_PASSWORD|g" \
-        -e "s|\${DC_BASE}|$(dc_base_of)|g" \
-        -e "s|\${CLIENT_SECRET}|$PORTAL_CLIENT_SECRET|g" \
-        "$tpl" > "$out"
-    chown -R "$KEYCLOAK_USER":"$KEYCLOAK_GROUP" "$KEYCLOAK_HOME/data" 2>/dev/null || true
-    chmod 0750 "$out" 2>/dev/null || true
-}
-
-write_keycloak_unit() {
-    log "пишу $SYSTEMD_UNIT_DIR/$KEYCLOAK_UNIT"
-    [ "$DRY_RUN" = "1" ] && return 0
-    mkdir -p "$SYSTEMD_UNIT_DIR"
-    cat > "$SYSTEMD_UNIT_DIR/$KEYCLOAK_UNIT" <<EOF
-[Unit]
-Description=Keycloak (нативный Узел А, Astra Linux 1.7)
-After=network-online.target slapd-lab.service
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=$KEYCLOAK_USER
-Group=$KEYCLOAK_GROUP
-WorkingDirectory=$KEYCLOAK_HOME
-EnvironmentFile=$KEYCLOAK_ETC_DIR/keycloak.env
-Environment=HOME=$KEYCLOAK_DATA_DIR
-ExecStart=$KEYCLOAK_HOME/bin/kc.sh start-dev --import-realm
-Restart=on-failure
-RestartSec=10
-LimitNOFILE=65536
-StandardOutput=journal
-StandardError=journal
-
-[Install]
-WantedBy=multi-user.target
-EOF
-    chmod 0644 "$SYSTEMD_UNIT_DIR/$KEYCLOAK_UNIT"
-    run "systemctl daemon-reload"
-}
-
-wait_keycloak() {
-    # Ждём порт и (если есть curl) — ответ realm'а.
-    local port="$KEYCLOAK_HTTP_PORT" i n=$((KEYCLOAK_START_TIMEOUT / 2))
-    log "жду Keycloak (до ${KEYCLOAK_START_TIMEOUT} с)"
-    for ((i = 0; i < n; i++)); do
-        if systemctl is-failed --quiet "$KEYCLOAK_UNIT" 2>/dev/null; then
-            warn "  $KEYCLOAK_UNIT в состоянии failed — ждать бесполезно"
-            return 1
-        fi
-        if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then
-            if command -v curl >/dev/null 2>&1; then
-                if curl -sf --max-time 5 "http://127.0.0.1:$port$KEYCLOAK_RELATIVE_PATH/realms/$KC_REALM" >/dev/null 2>&1; then
-                    log "  realm $KC_REALM доступен"
-                    return 0
-                fi
-            else
-                log "  порт $port слушает"
-                return 0
-            fi
-        fi
-        sleep 2
-    done
-    return 1
-}
-
-enable_keycloak_service() {
-    log "включаю и запускаю $KEYCLOAK_UNIT"
-    run "systemctl enable $KEYCLOAK_UNIT || true"
-    run "systemctl reset-failed $KEYCLOAK_UNIT 2>/dev/null || true"
-    run "systemctl restart $KEYCLOAK_UNIT || true"
-    if [ "$DRY_RUN" = "1" ]; then return 0; fi
-    if ! wait_keycloak; then
-        warn "$KEYCLOAK_UNIT не поднялся — последние строки журнала:"
-        journalctl -u "$KEYCLOAK_UNIT" -n 50 --no-pager 2>&1 | sed 's/^/      /' >&2 || true
-        die "Keycloak не отвечает на порту $KEYCLOAK_HTTP_PORT"
-    fi
-    log "Keycloak: http://$KEYCLOAK_HOST:$KEYCLOAK_HTTP_PORT$KEYCLOAK_RELATIVE_PATH/ (realm $KC_REALM, админ $KEYCLOAK_ADMIN_USER)"
-}
-
-install_keycloak() {
-    if [ "$SKIP_KEYCLOAK" = "1" ]; then
-        log "Keycloak пропущен (--skip-keycloak)"
-        return 0
-    fi
-    install_java
-    install_keycloak_dist
-    create_keycloak_user
-    fix_keycloak_ownership
-    write_keycloak_env
-    write_keycloak_realm
-    write_keycloak_unit
-    enable_keycloak_service
-}
-
 # ============================== основной ход ==============================
 main() {
     if [ "$CHECK_TEMPLATES" = "1" ]; then
@@ -1323,6 +1068,10 @@ main() {
 
     need_root
     check_os
+    case "$ONLY" in
+        all|kdc|ldap) ;;
+        *) die "--only: ожидается all|kdc|ldap (получено: $ONLY)" ;;
+    esac
 
     log "параметры из $ENV_FILE"
     log "  скрипт: $SCRIPT_DIR/$(basename "${BASH_SOURCE[0]}")"
@@ -1358,10 +1107,6 @@ main() {
         write_seed
         enable_services
         seed_ldap
-    fi
-
-    if [ "$ONLY" = "all" ] || [ "$ONLY" = "keycloak" ]; then
-        install_keycloak
     fi
 
     echo
